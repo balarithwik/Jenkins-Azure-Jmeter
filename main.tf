@@ -128,83 +128,61 @@ resource "azurerm_linux_virtual_machine" "vm" {
   # Provisioning
   # ----------------------------
   provisioner "remote-exec" {
-  inline = [
-    "set -e",
+    inline = [
+      "set -e",
 
-    # ---------------- System prep ----------------
-    "sudo swapoff -a",
-    "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
+      "sudo apt-get update -y",
 
-    "sudo modprobe br_netfilter",
-    "echo 'br_netfilter' | sudo tee /etc/modules-load.d/k8s.conf",
+      # Disable swap (mandatory for Kubernetes)
+      "sudo swapoff -a",
+      "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
 
-    "cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables=1
-net.bridge.bridge-nf-call-ip6tables=1
-net.ipv4.ip_forward=1
-EOF",
+      # Kernel modules
+      "sudo modprobe overlay",
+      "sudo modprobe br_netfilter",
 
-    "sudo sysctl --system",
+      # Sysctl settings (FIXED)
+      "sudo sh -c 'echo \"net.bridge.bridge-nf-call-iptables=1\nnet.bridge.bridge-nf-call-ip6tables=1\nnet.ipv4.ip_forward=1\" > /etc/sysctl.d/k8s.conf'",
+      "sudo sysctl --system",
 
-    # ---------------- Docker / containerd ----------------
-    "sudo apt-get update -y",
-    "sudo apt-get install -y containerd",
+      # Container runtime
+      "sudo apt-get install -y containerd",
+      "sudo systemctl enable containerd",
+      "sudo systemctl restart containerd",
 
-    "sudo mkdir -p /etc/containerd",
-    "sudo containerd config default | sudo tee /etc/containerd/config.toml",
-    "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml",
+      # Kubernetes packages
+      "sudo apt-get install -y apt-transport-https ca-certificates curl",
+      "curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -",
+      "echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y kubelet kubeadm kubectl",
+      "sudo apt-mark hold kubelet kubeadm kubectl",
 
-    "sudo systemctl restart containerd",
-    "sudo systemctl enable containerd",
+      # Initialize Kubernetes
+      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16",
 
-    # ---------------- Kubernetes ----------------
-    "sudo apt-get install -y apt-transport-https ca-certificates curl",
-    "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
-    "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      # Kube config
+      "mkdir -p $HOME/.kube",
+      "sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config",
+      "sudo chown $(id -u):$(id -g) $HOME/.kube/config",
 
-    "sudo apt-get update -y",
-    "sudo apt-get install -y kubelet kubeadm kubectl",
-    "sudo apt-mark hold kubelet kubeadm kubectl",
+      # Network plugin
+      "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"
+    ]
 
-    # ---------------- kubeadm init ----------------
-    "sudo kubeadm init --pod-network-cidr=10.244.0.0/16",
-
-    # WAIT until admin.conf exists
-    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 5; done",
-
-    "mkdir -p /home/azureuser/.kube",
-    "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
-    "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
-
-    # ---------------- CNI ----------------
-    "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
-
-    "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
-
-    # ---------------- Apps ----------------
-    "kubectl create deployment nginx --image=nginx || true",
-    "kubectl expose deployment nginx --type=NodePort --port=80 || true",
-
-    "kubectl create deployment mysql --image=mysql:5.7 || true",
-    "kubectl set env deployment/mysql MYSQL_ROOT_PASSWORD=rootpass || true",
-    "kubectl expose deployment mysql --type=NodePort --port=3306 || true",
-
-    "kubectl get nodes",
-    "kubectl get svc"
-  ]
-
-  connection {
-    type        = "ssh"
-    user        = "azureuser"
-    private_key = file("C:/Users/Bala/.ssh/id_rsa")
-    host        = azurerm_public_ip.vm_ip.ip_address
-    timeout     = "45m"
+    connection {
+      type        = "ssh"
+      user        = "azureuser"
+      private_key = file("~/.ssh/id_rsa")
+      host        = azurerm_public_ip.pip.ip_address
+      timeout     = "45m"
+    }
   }
-}
 
-# ----------------------------
-# Output
-# ----------------------------
-output "vm_public_ip" {
-  value = azurerm_public_ip.vm_ip.ip_address
+  # ----------------------------
+  # Output
+  # ----------------------------
+  output "vm_public_ip" {
+    value = azurerm_public_ip.vm_ip.ip_address
+  }
 }
