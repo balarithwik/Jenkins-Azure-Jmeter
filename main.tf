@@ -14,11 +14,17 @@ provider "azurerm" {
   skip_provider_registration = true
 }
 
+# ----------------------------
+# Resource Group
+# ----------------------------
 resource "azurerm_resource_group" "rg" {
   name     = "demo-rg"
   location = "West US 2"
 }
 
+# ----------------------------
+# Networking
+# ----------------------------
 resource "azurerm_virtual_network" "vnet" {
   name                = "demo-vnet"
   address_space       = ["10.0.0.0/16"]
@@ -89,6 +95,9 @@ resource "azurerm_network_interface_security_group_association" "assoc" {
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
+# ----------------------------
+# Virtual Machine
+# ----------------------------
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = "demo-vm"
   resource_group_name = azurerm_resource_group.rg.name
@@ -115,59 +124,63 @@ resource "azurerm_linux_virtual_machine" "vm" {
     version   = "latest"
   }
 
+  # ----------------------------
+  # Provisioning
+  # ----------------------------
   provisioner "remote-exec" {
     inline = [
       "set -e",
 
-      # ---- Base packages ----
+      # OS prep
       "sudo apt-get update -y",
       "sudo apt-get install -y ca-certificates curl gnupg lsb-release",
 
-      # ---- Docker repo + install ----
-      "curl -fsSL https://get.docker.com | sudo sh",
+      # ---------------- Docker ----------------
+      "sudo mkdir -p /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+      "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu focal stable\" | sudo tee /etc/apt/sources.list.d/docker.list",
+
+      "sudo apt-get update -y",
+      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+
       "sudo systemctl enable docker",
       "sudo systemctl start docker",
+      "sudo usermod -aG docker azureuser",
 
-      # ---- Kubernetes repo ----
-      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/kubernetes.gpg",
-      "echo 'deb [signed-by=/etc/apt/trusted.gpg.d/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      # ---------------- Kubernetes ----------------
+      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
+      "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
 
       "sudo apt-get update -y",
       "sudo apt-get install -y kubelet kubeadm kubectl",
       "sudo apt-mark hold kubelet kubeadm kubectl",
 
-      # ---- containerd config for Kubernetes ----
-      "sudo mkdir -p /etc/containerd",
-      "containerd config default | sudo tee /etc/containerd/config.toml",
-      "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml",
-      "sudo systemctl restart containerd",
-      "sudo systemctl restart docker",
+      # Init cluster
+      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 || true",
+      "sleep 120",
 
-      # ---- kubeadm init (safe) ----
-      "if [ ! -f /etc/kubernetes/admin.conf ]; then sudo kubeadm init --pod-network-cidr=10.244.0.0/16; fi",
+      "mkdir -p /home/azureuser/.kube",
+      "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
+      "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
 
-      # ---- kubeconfig ----
-      "if [ -f /etc/kubernetes/admin.conf ]; then mkdir -p /home/azureuser/.kube; sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config; sudo chown azureuser:azureuser /home/azureuser/.kube/config; fi",
-
-      # ---- Flannel network ----
-      "kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml || true",
+      # Network plugin
+      "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
       "sleep 30",
 
-      # ---- Allow scheduling ----
+      # Allow pods on control-plane
       "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
 
-      # ---- Deploy Nginx ----
+      # ---------------- Apps ----------------
       "kubectl create deployment nginx --image=nginx || true",
       "kubectl expose deployment nginx --type=NodePort --port=80 || true",
 
-      # ---- Deploy MySQL ----
       "kubectl create deployment mysql --image=mysql:5.7 || true",
       "kubectl set env deployment/mysql MYSQL_ROOT_PASSWORD=rootpass || true",
       "kubectl expose deployment mysql --type=NodePort --port=3306 || true",
 
-      # ---- Status ----
-      "kubectl get nodes || true",
-      "kubectl get svc || true"
+      # Status
+      "kubectl get nodes",
+      "kubectl get svc"
     ]
 
     connection {
@@ -175,11 +188,14 @@ resource "azurerm_linux_virtual_machine" "vm" {
       user        = "azureuser"
       private_key = file("C:/Users/Bala/.ssh/id_rsa")
       host        = azurerm_public_ip.vm_ip.ip_address
-      timeout     = "30m"
+      timeout     = "40m"
     }
   }
 }
 
+# ----------------------------
+# Output
+# ----------------------------
 output "vm_public_ip" {
   value = azurerm_public_ip.vm_ip.ip_address
 }
