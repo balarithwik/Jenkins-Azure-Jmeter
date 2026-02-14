@@ -14,7 +14,8 @@ pipeline {
 
     stage('Checkout Code') {
       steps {
-        checkout scm
+        git branch: 'main',
+            url: 'https://github.com/balarithwik/Jenkins-Azure-Jmeter.git'
       }
     }
 
@@ -36,19 +37,34 @@ pipeline {
       }
     }
 
-    // ===== Disabled stages for later =====
-
-    stage('Run JMeter Test') {
-      when { expression { false } }
+    stage('Provision & Run JMeter') {
       steps {
-        echo 'Will execute JMeter non-GUI test'
+        echo 'Install Java, JMeter, create HTML pages, run JMeter test'
+        // your SSH / remote-exec / scripts here
+      }
+    }
+
+    stage('Email JMeter Report') {
+      steps {
+        echo 'Send JMeter HTML report via email'
+        // emailext step
       }
     }
   }
 
   post {
+
     always {
-      echo 'Pipeline completed'
+      echo '⚠️ Cleaning up infrastructure (terraform destroy will ALWAYS run)'
+      bat 'terraform destroy -auto-approve'
+    }
+
+    success {
+      echo '✅ Pipeline completed successfully'
+    }
+
+    failure {
+      echo '❌ Pipeline failed, but infrastructure was destroyed'
     }
   }
 }
