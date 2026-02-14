@@ -128,68 +128,77 @@ resource "azurerm_linux_virtual_machine" "vm" {
   # Provisioning
   # ----------------------------
   provisioner "remote-exec" {
-    inline = [
-      "set -e",
+  inline = [
+    "set -e",
 
-      # OS prep
-      "sudo apt-get update -y",
-      "sudo apt-get install -y ca-certificates curl gnupg lsb-release",
+    # ---------------- System prep ----------------
+    "sudo swapoff -a",
+    "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
 
-      # ---------------- Docker ----------------
-      "sudo mkdir -p /etc/apt/keyrings",
-      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
-      "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu focal stable\" | sudo tee /etc/apt/sources.list.d/docker.list",
+    "sudo modprobe br_netfilter",
+    "echo 'br_netfilter' | sudo tee /etc/modules-load.d/k8s.conf",
 
-      "sudo apt-get update -y",
-      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+    "cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables=1
+net.bridge.bridge-nf-call-ip6tables=1
+net.ipv4.ip_forward=1
+EOF",
 
-      "sudo systemctl enable docker",
-      "sudo systemctl start docker",
-      "sudo usermod -aG docker azureuser",
+    "sudo sysctl --system",
 
-      # ---------------- Kubernetes ----------------
-      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
-      "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+    # ---------------- Docker / containerd ----------------
+    "sudo apt-get update -y",
+    "sudo apt-get install -y containerd",
 
-      "sudo apt-get update -y",
-      "sudo apt-get install -y kubelet kubeadm kubectl",
-      "sudo apt-mark hold kubelet kubeadm kubectl",
+    "sudo mkdir -p /etc/containerd",
+    "sudo containerd config default | sudo tee /etc/containerd/config.toml",
+    "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml",
 
-      # Init cluster
-      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 || true",
-      "sleep 120",
+    "sudo systemctl restart containerd",
+    "sudo systemctl enable containerd",
 
-      "mkdir -p /home/azureuser/.kube",
-      "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
-      "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
+    # ---------------- Kubernetes ----------------
+    "sudo apt-get install -y apt-transport-https ca-certificates curl",
+    "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
+    "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
 
-      # Network plugin
-      "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
-      "sleep 30",
+    "sudo apt-get update -y",
+    "sudo apt-get install -y kubelet kubeadm kubectl",
+    "sudo apt-mark hold kubelet kubeadm kubectl",
 
-      # Allow pods on control-plane
-      "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
+    # ---------------- kubeadm init ----------------
+    "sudo kubeadm init --pod-network-cidr=10.244.0.0/16",
 
-      # ---------------- Apps ----------------
-      "kubectl create deployment nginx --image=nginx || true",
-      "kubectl expose deployment nginx --type=NodePort --port=80 || true",
+    # WAIT until admin.conf exists
+    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 5; done",
 
-      "kubectl create deployment mysql --image=mysql:5.7 || true",
-      "kubectl set env deployment/mysql MYSQL_ROOT_PASSWORD=rootpass || true",
-      "kubectl expose deployment mysql --type=NodePort --port=3306 || true",
+    "mkdir -p /home/azureuser/.kube",
+    "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
+    "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
 
-      # Status
-      "kubectl get nodes",
-      "kubectl get svc"
-    ]
+    # ---------------- CNI ----------------
+    "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
 
-    connection {
-      type        = "ssh"
-      user        = "azureuser"
-      private_key = file("C:/Users/Bala/.ssh/id_rsa")
-      host        = azurerm_public_ip.vm_ip.ip_address
-      timeout     = "40m"
-    }
+    "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
+
+    # ---------------- Apps ----------------
+    "kubectl create deployment nginx --image=nginx || true",
+    "kubectl expose deployment nginx --type=NodePort --port=80 || true",
+
+    "kubectl create deployment mysql --image=mysql:5.7 || true",
+    "kubectl set env deployment/mysql MYSQL_ROOT_PASSWORD=rootpass || true",
+    "kubectl expose deployment mysql --type=NodePort --port=3306 || true",
+
+    "kubectl get nodes",
+    "kubectl get svc"
+  ]
+
+  connection {
+    type        = "ssh"
+    user        = "azureuser"
+    private_key = file("C:/Users/Bala/.ssh/id_rsa")
+    host        = azurerm_public_ip.vm_ip.ip_address
+    timeout     = "45m"
   }
 }
 
