@@ -124,16 +124,13 @@ resource "azurerm_linux_virtual_machine" "vm" {
     version   = "latest"
   }
 
-  # ----------------------------
-  # Provisioning
-  # ----------------------------
   provisioner "remote-exec" {
     inline = [
       "set -e",
 
       "sudo apt-get update -y",
 
-      # Disable swap (mandatory for Kubernetes)
+      # Disable swap (mandatory)
       "sudo swapoff -a",
       "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
 
@@ -141,48 +138,58 @@ resource "azurerm_linux_virtual_machine" "vm" {
       "sudo modprobe overlay",
       "sudo modprobe br_netfilter",
 
-      # Sysctl settings (FIXED)
-      "sudo sh -c 'echo \"net.bridge.bridge-nf-call-iptables=1\nnet.bridge.bridge-nf-call-ip6tables=1\nnet.ipv4.ip_forward=1\" > /etc/sysctl.d/k8s.conf'",
+      # Sysctl
+      "sudo tee /etc/sysctl.d/k8s.conf <<EOF\nnet.bridge.bridge-nf-call-iptables=1\nnet.bridge.bridge-nf-call-ip6tables=1\nnet.ipv4.ip_forward=1\nEOF",
       "sudo sysctl --system",
 
-      # Container runtime
+      # Containerd
       "sudo apt-get install -y containerd",
-      "sudo systemctl enable containerd",
+      "sudo mkdir -p /etc/containerd",
+      "sudo containerd config default | sudo tee /etc/containerd/config.toml",
       "sudo systemctl restart containerd",
+      "sudo systemctl enable containerd",
 
-      # Kubernetes packages
+      # Kubernetes repo
       "sudo apt-get install -y apt-transport-https ca-certificates curl",
-      "curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -",
-      "echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      "sudo mkdir -p /etc/apt/keyrings",
+      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
+      "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+
       "sudo apt-get update -y",
       "sudo apt-get install -y kubelet kubeadm kubectl",
       "sudo apt-mark hold kubelet kubeadm kubectl",
 
-      # Initialize Kubernetes
-      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16",
+      # Kubernetes init (safe)
+      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 || true",
+      "sleep 90",
 
-      # Kube config
-      "mkdir -p $HOME/.kube",
-      "sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config",
-      "sudo chown $(id -u):$(id -g) $HOME/.kube/config",
+      # kubeconfig
+      "mkdir -p /home/azureuser/.kube",
+      "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
+      "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
 
-      # Network plugin
-      "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"
+      # Flannel
+      "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
+
+      # Allow scheduling on control plane
+      "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
+
+      "kubectl get nodes"
     ]
 
     connection {
       type        = "ssh"
       user        = "azureuser"
-      private_key = file("~/.ssh/id_rsa")
-      host        = azurerm_public_ip.pip.ip_address
+      private_key = file("C:/Users/Bala/.ssh/id_rsa")
+      host        = azurerm_public_ip.vm_ip.ip_address
       timeout     = "45m"
     }
   }
+}
 
-  # ----------------------------
-  # Output
-  # ----------------------------
-  output "vm_public_ip" {
-    value = azurerm_public_ip.vm_ip.ip_address
-  }
+# ----------------------------
+# Output
+# ----------------------------
+output "vm_public_ip" {
+  value = azurerm_public_ip.vm_ip.ip_address
 }
