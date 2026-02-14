@@ -65,8 +65,8 @@ resource "azurerm_network_security_group" "nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "*"
     destination_port_range     = "22"
+    source_port_range          = "*"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
@@ -77,8 +77,8 @@ resource "azurerm_network_security_group" "nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "*"
     destination_port_range     = "30000-32767"
+    source_port_range          = "*"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
@@ -119,43 +119,54 @@ resource "azurerm_linux_virtual_machine" "vm" {
     inline = [
       "set -e",
 
+      # ---- Base OS prep ----
+      "sudo swapoff -a",
+      "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
+
       "sudo apt-get update -y",
-      "sudo apt-get install -y docker.io apt-transport-https ca-certificates curl",
+      "sudo apt-get install -y ca-certificates curl gnupg lsb-release",
+
+      # ---- Docker official install ----
+      "sudo mkdir -p /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu focal stable\" | sudo tee /etc/apt/sources.list.d/docker.list",
+
+      "sudo apt-get update -y",
+      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
       "sudo systemctl enable docker",
       "sudo systemctl start docker",
+      "sudo usermod -aG docker azureuser",
 
-      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/kubernetes.gpg",
-      "echo 'deb [signed-by=/etc/apt/trusted.gpg.d/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      # ---- Kubernetes repo ----
+      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
+      "echo \"deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /\" | sudo tee /etc/apt/sources.list.d/kubernetes.list",
 
       "sudo apt-get update -y",
       "sudo apt-get install -y kubelet kubeadm kubectl",
       "sudo apt-mark hold kubelet kubeadm kubectl",
 
-      # --- Initialize Kubernetes (resilient) ---
+      # ---- Kubernetes init ----
       "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 || true",
       "sleep 120",
 
       "mkdir -p /home/azureuser/.kube",
-      "sudo cp -f /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
+      "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
       "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
 
-      # --- Network plugin ---
+      # ---- Flannel ----
       "kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml || true",
       "sleep 30",
 
-      # --- Allow scheduling on control-plane ---
       "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
 
-      # --- Deploy Nginx ---
+      # ---- Deploy workloads ----
       "kubectl create deployment nginx --image=nginx || true",
       "kubectl expose deployment nginx --type=NodePort --port=80 || true",
 
-      # --- Deploy MySQL ---
       "kubectl create deployment mysql --image=mysql:5.7 || true",
       "kubectl set env deployment/mysql MYSQL_ROOT_PASSWORD=rootpass || true",
       "kubectl expose deployment mysql --type=NodePort --port=3306 || true",
 
-      # --- Quick status ---
       "kubectl get nodes || true",
       "kubectl get svc || true"
     ]
