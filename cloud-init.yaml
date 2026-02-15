@@ -6,11 +6,18 @@ packages:
   - apt-transport-https
   - ca-certificates
   - curl
+  - nginx
+  - docker.io
 
 runcmd:
-  # Disable swap
+  # Disable swap (K8s requirement)
   - swapoff -a
   - sed -i '/ swap / s/^/#/' /etc/fstab
+
+  # Enable Docker
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker azureuser
 
   # Kernel modules
   - modprobe overlay
@@ -25,7 +32,7 @@ runcmd:
     EOF
   - sysctl --system
 
-  # Install containerd (Azure-safe)
+  # Install containerd
   - apt-get update
   - apt-get install -y containerd
   - mkdir -p /etc/containerd
@@ -43,10 +50,10 @@ runcmd:
   - apt-get install -y kubelet kubeadm kubectl
   - apt-mark hold kubelet kubeadm kubectl
 
-  # Init cluster (single-node)
+  # Init Kubernetes (single-node)
   - kubeadm init --pod-network-cidr=10.244.0.0/16
 
-  # kubeconfig for azureuser
+  # kubeconfig
   - mkdir -p /home/azureuser/.kube
   - cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config
   - chown azureuser:azureuser /home/azureuser/.kube/config
@@ -54,7 +61,26 @@ runcmd:
   # Flannel CNI
   - su - azureuser -c "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"
 
-  # Allow pods on control plane
+  # Allow control-plane scheduling
   - su - azureuser -c "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true"
 
-  - echo "Kubernetes bootstrap via cloud-init completed"
+  # NGINX pages
+  - |
+    cat <<EOF >/var/www/html/index.html
+    <h1>Home Page</h1>
+    EOF
+
+  - |
+    cat <<EOF >/var/www/html/about.html
+    <h1>About Page</h1>
+    EOF
+
+  - |
+    cat <<EOF >/var/www/html/contact.html
+    <h1>Contact Page</h1>
+    EOF
+
+  - systemctl enable nginx
+  - systemctl restart nginx
+
+  - echo "Cloud-init completed successfully"

@@ -9,17 +9,14 @@ terraform {
   }
 }
 
-# --------------------------------------------------
-# Provider
-# --------------------------------------------------
 provider "azurerm" {
   features {}
   skip_provider_registration = true
 }
 
-# --------------------------------------------------
+# -----------------------------
 # Variables
-# --------------------------------------------------
+# -----------------------------
 variable "location" {
   default = "West US 2"
 }
@@ -32,17 +29,17 @@ variable "ssh_public_key_path" {
   default = "C:/Users/Bala/.ssh/id_rsa.pub"
 }
 
-# --------------------------------------------------
+# -----------------------------
 # Resource Group
-# --------------------------------------------------
+# -----------------------------
 resource "azurerm_resource_group" "rg" {
   name     = "demo-rg"
   location = var.location
 }
 
-# --------------------------------------------------
+# -----------------------------
 # Networking
-# --------------------------------------------------
+# -----------------------------
 resource "azurerm_virtual_network" "vnet" {
   name                = "demo-vnet"
   address_space       = ["10.0.0.0/16"]
@@ -83,8 +80,20 @@ resource "azurerm_network_security_group" "nsg" {
   }
 
   security_rule {
-    name                       = "NodePort"
+    name                       = "HTTP"
     priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "NodePort"
+    priority                   = 1003
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
@@ -113,9 +122,9 @@ resource "azurerm_network_interface_security_group_association" "assoc" {
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
-# --------------------------------------------------
-# Linux VM (cloud-init)
-# --------------------------------------------------
+# -----------------------------
+# Linux VM (cloud-init only)
+# -----------------------------
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = "demo-vm"
   resource_group_name = azurerm_resource_group.rg.name
@@ -144,7 +153,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
     version   = "latest"
   }
 
-  # 👇 Cloud-init replaces remote-exec
   custom_data = base64encode(file("${path.module}/cloud-init.yaml"))
 
   depends_on = [
@@ -152,9 +160,9 @@ resource "azurerm_linux_virtual_machine" "vm" {
   ]
 }
 
-# --------------------------------------------------
+# -----------------------------
 # Outputs
-# --------------------------------------------------
+# -----------------------------
 output "vm_public_ip" {
   value = azurerm_public_ip.vm_ip.ip_address
 }
