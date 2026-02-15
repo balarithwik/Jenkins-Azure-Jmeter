@@ -44,6 +44,27 @@ pipeline {
       }
     }
 
+    /* 🔥 CRITICAL FIX — WAIT FOR SSH */
+    stage('Wait for SSH to be ready') {
+      steps {
+        withCredentials([sshUserPrivateKey(
+          credentialsId: 'azure-token',
+          keyFileVariable: 'SSH_KEY'
+        )]) {
+          bat '''
+          echo Waiting for SSH to become ready...
+          for /L %%i in (1,1,20) do (
+            ssh -i %SSH_KEY% -o StrictHostKeyChecking=no -o ConnectTimeout=5 %SSH_USER%@%VM_IP% "echo SSH_READY" && exit /b 0
+            echo SSH not ready yet... retrying
+            timeout /t 15 >nul
+          )
+          echo ERROR: SSH never became ready
+          exit /b 1
+          '''
+        }
+      }
+    }
+
     stage('Install NGINX & Create HTML Pages') {
       steps {
         withCredentials([sshUserPrivateKey(
@@ -89,8 +110,8 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          scp -i %SSH_KEY% -o StrictHostKeyChecking=no web_perf_test.jmx ^
-          %SSH_USER%@%VM_IP%:/home/azureuser/
+          scp -i %SSH_KEY% -o StrictHostKeyChecking=no ^
+          web_perf_test.jmx %SSH_USER%@%VM_IP%:/home/azureuser/
           """
         }
       }
