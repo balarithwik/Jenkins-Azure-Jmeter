@@ -130,7 +130,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
 
       "sudo apt-get update -y",
 
-      # Disable swap (mandatory)
+      # Disable swap
       "sudo swapoff -a",
       "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
 
@@ -149,7 +149,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
       "sudo systemctl restart containerd",
       "sudo systemctl enable containerd",
 
-      # Kubernetes repo
+      # Kubernetes packages
       "sudo apt-get install -y apt-transport-https ca-certificates curl",
       "sudo mkdir -p /etc/apt/keyrings",
       "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
@@ -159,22 +159,21 @@ resource "azurerm_linux_virtual_machine" "vm" {
       "sudo apt-get install -y kubelet kubeadm kubectl",
       "sudo apt-mark hold kubelet kubeadm kubectl",
 
-      # Kubernetes init (safe)
+      # Kubernetes init (NO WAITING)
       "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 || true",
-      "sleep 90",
 
       # kubeconfig
       "mkdir -p /home/azureuser/.kube",
       "sudo cp /etc/kubernetes/admin.conf /home/azureuser/.kube/config",
       "sudo chown azureuser:azureuser /home/azureuser/.kube/config",
 
-      # Flannel
+      # Flannel (apply only, no wait)
       "kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml",
 
-      # Allow scheduling on control plane
+      # Allow scheduling
       "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true",
 
-      "kubectl get nodes"
+      "echo 'Terraform bootstrap completed'"
     ]
 
     connection {
