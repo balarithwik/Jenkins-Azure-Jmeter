@@ -45,31 +45,21 @@ pipeline {
     }
 
     /* ✅ CORRECT SSH WAIT */
-   stage('Wait for VM to be Ready (Cloud-init aware)') {
+   stage('Wait for VM to be Ready (cloud-init)') {
   steps {
     withCredentials([sshUserPrivateKey(
       credentialsId: 'azure-token',
       keyFileVariable: 'SSH_KEY'
     )]) {
-      bat '''
-      echo Waiting for VM SSH + cloud-init to finish...
-
-      for /L %%i in (1,1,40) do (
-        echo Attempt %%i/40...
-
-        ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no -o ConnectTimeout=10 %SSH_USER%@%VM_IP% ^
-        "test -f /var/lib/cloud/instance/boot-finished && echo READY" && (
-          echo VM is fully ready
-          exit /b 0
-        )
-
-        echo VM not ready yet, waiting...
-        timeout /t 15 >nul
-      )
-
-      echo ERROR: VM never became ready
-      exit /b 1
-      '''
+      bat """
+      echo Waiting for cloud-init to finish on VM...
+      ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% ^
+      "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
+         echo 'cloud-init still running...';
+         sleep 15;
+       done;
+       echo 'cloud-init completed'"
+      """
     }
   }
 }
