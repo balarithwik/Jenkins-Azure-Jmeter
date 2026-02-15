@@ -45,31 +45,30 @@ pipeline {
     }
 
     /* ✅ CORRECT SSH WAIT */
-    stage('Wait for SSH (Azure-safe)') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat '''
-          echo Waiting for Azure VM SSH (this can take 3–5 minutes)...
+   stage('Wait for SSH (Reliable)') {
+  steps {
+    withCredentials([sshUserPrivateKey(
+      credentialsId: 'azure-token',
+      keyFileVariable: 'SSH_KEY'
+    )]) {
+      bat '''
+      echo Waiting for SSH to become available...
 
-          for /L %%i in (1,1,30) do (
-            powershell -Command "Test-NetConnection -ComputerName %VM_IP% -Port 22 | Select-Object -ExpandProperty TcpTestSucceeded" | findstr True >nul
-            if %errorlevel%==0 (
-              echo Port 22 is open
-              ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% "echo SSH_READY" && exit /b 0
-            )
-            echo SSH not ready yet... retry %%i/30
-            timeout /t 15 >nul
-          )
+      for /L %%i in (1,1,30) do (
+        echo Attempt %%i/30...
+        ssh -i %SSH_KEY% -o StrictHostKeyChecking=no -o ConnectTimeout=10 %SSH_USER%@%VM_IP% "echo SSH_READY" && (
+          echo SSH is ready
+          exit /b 0
+        )
+        timeout /t 15 >nul
+      )
 
-          echo ERROR: SSH never became ready
-          exit /b 1
-          '''
-        }
-      }
+      echo ERROR: SSH never became ready
+      exit /b 1
+      '''
     }
+  }
+}
 
     stage('Install NGINX & Create HTML Pages') {
       steps {
