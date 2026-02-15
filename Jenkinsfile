@@ -44,20 +44,26 @@ pipeline {
       }
     }
 
-    /* 🔥 CRITICAL FIX — WAIT FOR SSH */
-    stage('Wait for SSH to be ready') {
+    /* ✅ CORRECT SSH WAIT */
+    stage('Wait for SSH (Azure-safe)') {
       steps {
         withCredentials([sshUserPrivateKey(
           credentialsId: 'azure-token',
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat '''
-          echo Waiting for SSH to become ready...
-          for /L %%i in (1,1,20) do (
-            ssh -i %SSH_KEY% -o StrictHostKeyChecking=no -o ConnectTimeout=5 %SSH_USER%@%VM_IP% "echo SSH_READY" && exit /b 0
-            echo SSH not ready yet... retrying
+          echo Waiting for Azure VM SSH (this can take 3–5 minutes)...
+
+          for /L %%i in (1,1,30) do (
+            powershell -Command "Test-NetConnection -ComputerName %VM_IP% -Port 22 | Select-Object -ExpandProperty TcpTestSucceeded" | findstr True >nul
+            if %errorlevel%==0 (
+              echo Port 22 is open
+              ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% "echo SSH_READY" && exit /b 0
+            )
+            echo SSH not ready yet... retry %%i/30
             timeout /t 15 >nul
           )
+
           echo ERROR: SSH never became ready
           exit /b 1
           '''
@@ -76,11 +82,9 @@ pipeline {
           "sudo apt update &&
            sudo apt install -y nginx &&
            sudo rm -rf /var/www/html/* &&
-
            echo '<h1>Home Page</h1>'    | sudo tee /var/www/html/index.html &&
            echo '<h1>About Page</h1>'   | sudo tee /var/www/html/about.html &&
            echo '<h1>Contact Page</h1>' | sudo tee /var/www/html/contact.html &&
-
            sudo systemctl restart nginx"
           """
         }
