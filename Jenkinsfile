@@ -9,6 +9,7 @@ pipeline {
 
     SSH_USER = "azureuser"
     TF_IN_AUTOMATION = "true"
+    SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   }
 
   stages {
@@ -22,7 +23,7 @@ pipeline {
 
     stage('Terraform Init') {
       steps {
-        bat 'terraform init'
+        bat 'terraform init -input=false'
       }
     }
 
@@ -44,25 +45,27 @@ pipeline {
       }
     }
 
-    /* ✅ CORRECT SSH WAIT */
-   stage('Wait for VM to be Ready (cloud-init)') {
-  steps {
-    withCredentials([sshUserPrivateKey(
-      credentialsId: 'azure-token',
-      keyFileVariable: 'SSH_KEY'
-    )]) {
-      bat """
-      echo Waiting for cloud-init to finish on VM...
-      ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% ^
-      "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
-         echo 'cloud-init still running...';
-         sleep 15;
-       done;
-       echo 'cloud-init completed'"
-      """
+    /* ✅ FIX 1: Proper cloud-init + SSH readiness */
+    stage('Wait for VM to be Ready (cloud-init aware)') {
+      steps {
+        withCredentials([sshUserPrivateKey(
+          credentialsId: 'azure-token',
+          keyFileVariable: 'SSH_KEY'
+        )]) {
+          timeout(time: 10, unit: 'MINUTES') {
+            bat """
+            echo Waiting for VM SSH & cloud-init...
+            ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
+            "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
+               echo 'cloud-init still running...';
+               sleep 15;
+             done;
+             echo 'cloud-init completed'"
+            """
+          }
+        }
+      }
     }
-  }
-}
 
     stage('Install NGINX & Create HTML Pages') {
       steps {
@@ -71,19 +74,21 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% ^
-          "sudo apt update &&
-           sudo apt install -y nginx &&
+          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
+          "sudo apt-get update -y &&
+           sudo apt-get install -y nginx &&
            sudo rm -rf /var/www/html/* &&
            echo '<h1>Home Page</h1>'    | sudo tee /var/www/html/index.html &&
            echo '<h1>About Page</h1>'   | sudo tee /var/www/html/about.html &&
            echo '<h1>Contact Page</h1>' | sudo tee /var/www/html/contact.html &&
+           sudo systemctl enable nginx &&
            sudo systemctl restart nginx"
           """
         }
       }
     }
 
+    /* ✅ FIX 2: Idempotent Java + JMeter install */
     stage('Install Java & JMeter') {
       steps {
         withCredentials([sshUserPrivateKey(
@@ -91,10 +96,12 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% ^
-          "sudo apt install -y openjdk-11-jdk wget unzip zip &&
-           wget https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz &&
-           tar -xzf apache-jmeter-5.6.3.tgz"
+          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
+          "sudo apt-get install -y openjdk-11-jdk wget unzip zip &&
+           if [ ! -d apache-jmeter-5.6.3 ]; then
+             wget https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz &&
+             tar -xzf apache-jmeter-5.6.3.tgz;
+           fi"
           """
         }
       }
@@ -107,13 +114,14 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          scp -i %SSH_KEY% -o StrictHostKeyChecking=no ^
+          scp -i %SSH_KEY% %SSH_OPTS% ^
           web_perf_test.jmx %SSH_USER%@%VM_IP%:/home/azureuser/
           """
         }
       }
     }
 
+    /* ✅ FIX 3: Explicit HOST injection (no confusion) */
     stage('Run JMeter Test & Generate Report') {
       steps {
         withCredentials([sshUserPrivateKey(
@@ -121,7 +129,7 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          ssh -i %SSH_KEY% -o StrictHostKeyChecking=no %SSH_USER%@%VM_IP% ^
+          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
           "/home/azureuser/apache-jmeter-5.6.3/bin/jmeter -n ^
            -t /home/azureuser/web_perf_test.jmx ^
            -JHOST=%VM_IP% ^
@@ -140,7 +148,7 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          scp -i %SSH_KEY% -o StrictHostKeyChecking=no ^
+          scp -i %SSH_KEY% %SSH_OPTS% ^
           %SSH_USER%@%VM_IP%:/home/azureuser/jmeter-report.zip .
           """
         }
@@ -156,7 +164,8 @@ Hi Team,
 
 JMeter performance test executed successfully.
 
-Target Host: ${VM_IP}
+Target Host:
+${VM_IP}
 
 HTML report is attached.
 
@@ -173,6 +182,7 @@ Jenkins
     }
   }
 
+  /* ✅ FIX 4: Guaranteed cleanup */
   post {
     always {
       echo "Destroying infrastructure (mandatory cleanup)"
