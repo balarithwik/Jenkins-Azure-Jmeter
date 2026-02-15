@@ -7,9 +7,7 @@ pipeline {
     ARM_SUBSCRIPTION_ID = credentials('ARM_SUBSCRIPTION_ID')
     ARM_TENANT_ID       = credentials('ARM_TENANT_ID')
 
-    SSH_USER = "azureuser"
     TF_IN_AUTOMATION = "true"
-    SSH_OPTS = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   }
 
   stages {
@@ -33,130 +31,91 @@ pipeline {
       }
     }
 
-    stage('Fetch VM Public IP') {
+    stage('Configure Kubernetes Access') {
+      steps {
+        bat '''
+        az login --service-principal ^
+          -u %ARM_CLIENT_ID% ^
+          -p %ARM_CLIENT_SECRET% ^
+          --tenant %ARM_TENANT_ID%
+
+        az account set --subscription %ARM_SUBSCRIPTION_ID%
+
+        az aks get-credentials ^
+          --resource-group my-rg ^
+          --name my-aks ^
+          --overwrite-existing
+        '''
+      }
+    }
+
+    stage('Wait for Kubernetes Ready') {
+      steps {
+        bat '''
+        kubectl wait --for=condition=Ready nodes --all --timeout=300s
+        '''
+      }
+    }
+
+    stage('Deploy NGINX & MySQL') {
+      steps {
+        bat '''
+        kubectl apply -f k8s/nginx-configmap.yaml
+        kubectl apply -f k8s/mysql-deployment.yaml
+        kubectl apply -f k8s/nginx-deployment.yaml
+        kubectl apply -f k8s/nginx-service.yaml
+        '''
+      }
+    }
+
+    stage('Wait for NGINX Service') {
       steps {
         script {
-          env.VM_IP = bat(
-            script: 'terraform output -raw vm_public_ip',
+          env.APP_IP = bat(
+            script: '''
+            kubectl get svc nginx ^
+              -o jsonpath="{.status.loadBalancer.ingress[0].ip}"
+            ''',
             returnStdout: true
           ).trim()
         }
-        echo "VM IP fetched: ${env.VM_IP}"
-      }
-    }
 
-    stage('Wait for SSH') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          for /L %%i in (1,1,30) do (
-            ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% "echo SSH ready" && exit /b 0
-            timeout /t 15 >nul
-          )
+        bat '''
+        if "%APP_IP%"=="" (
+          echo Waiting for LoadBalancer IP...
+          timeout /t 30
           exit /b 1
-          """
-        }
+        )
+        '''
+
+        echo "Application URL: http://${APP_IP}"
       }
     }
 
-    stage('Wait for Kubernetes') {
+    stage('Run JMeter Test (Docker)') {
       steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "until kubectl get nodes; do echo waiting for k8s; sleep 15; done"
-          """
-        }
+        bat '''
+        docker run --rm ^
+          -v %CD%/jmeter:/jmeter ^
+          -v %CD%/jmeter-report:/report ^
+          justb4/jmeter:5.6.3 ^
+          -n ^
+          -t /jmeter/web_perf_test.jmx ^
+          -JHOST=%APP_IP% ^
+          -l /report/results.jtl ^
+          -e -o /report/html
+        '''
       }
     }
 
-    stage('Deploy NGINX & MySQL (Kubernetes)') {
+    stage('Zip JMeter Report') {
       steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          scp -r -i %SSH_KEY% %SSH_OPTS% k8s %SSH_USER%@%VM_IP%:/home/azureuser/
-          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "kubectl apply -f k8s/nginx-configmap.yaml &&
-           kubectl apply -f k8s/nginx-deployment.yaml &&
-           kubectl apply -f k8s/mysql-deployment.yaml"
-          """
-        }
-      }
-    }
-
-    stage('Install Java & JMeter') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "sudo apt-get update &&
-           sudo apt-get install -y openjdk-11-jdk wget unzip &&
-           if [ ! -d apache-jmeter-5.6.3 ]; then
-             wget https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz &&
-             tar -xzf apache-jmeter-5.6.3.tgz;
-           fi"
-          """
-        }
-      }
-    }
-
-    stage('Copy JMeter Test File') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          scp -i %SSH_KEY% %SSH_OPTS% jmeter/web_perf_test.jmx ^
-          %SSH_USER%@%VM_IP%:/home/azureuser/
-          """
-        }
-      }
-    }
-
-    stage('Run JMeter Test & Generate Report') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "/home/azureuser/apache-jmeter-5.6.3/bin/jmeter -n ^
-           -t /home/azureuser/web_perf_test.jmx ^
-           -JHOST=%VM_IP% ^
-           -JPORT=30080 ^
-           -l results.jtl ^
-           -e -o report &&
-           zip -r jmeter-report.zip report"
-          """
-        }
-      }
-    }
-
-    stage('Copy Report to Jenkins') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          bat """
-          scp -i %SSH_KEY% %SSH_OPTS% ^
-          %SSH_USER%@%VM_IP%:/home/azureuser/jmeter-report.zip .
-          """
-        }
+        bat '''
+        powershell Compress-Archive ^
+          jmeter-report/html ^
+          jmeter-report.zip ^
+          -Force
+        '''
       }
     }
 
@@ -167,10 +126,10 @@ pipeline {
           body: """
 Hi Team,
 
-JMeter performance test executed successfully.
+Performance testing completed successfully.
 
-Target:
-http://${VM_IP}:30080
+Target URL:
+http://${APP_IP}
 
 Report attached.
 
@@ -189,7 +148,7 @@ Jenkins
 
   post {
     always {
-      echo "Destroying infrastructure"
+      echo "Destroying Azure infrastructure"
       bat 'terraform destroy -auto-approve'
     }
   }
