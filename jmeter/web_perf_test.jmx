@@ -17,7 +17,7 @@
 
         <!-- Home Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Home Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">nginx</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
           <stringProp name="HTTPSampler.port">80</stringProp>
           <stringProp name="HTTPSampler.path">/</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
@@ -26,7 +26,7 @@
 
         <!-- About Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="About Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">nginx</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
           <stringProp name="HTTPSampler.port">80</stringProp>
           <stringProp name="HTTPSampler.path">/about.html</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
@@ -35,7 +35,7 @@
 
         <!-- Contact Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Contact Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">nginx</stringProp>
+          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
           <stringProp name="HTTPSampler.port">80</stringProp>
           <stringProp name="HTTPSampler.path">/contact.html</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
