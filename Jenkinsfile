@@ -46,26 +46,24 @@ pipeline {
     }
 
     /* ✅ FIX 1: Proper cloud-init + SSH readiness */
-    stage('Wait for VM to be Ready (cloud-init aware)') {
-      steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: 'azure-token',
-          keyFileVariable: 'SSH_KEY'
-        )]) {
-          timeout(time: 10, unit: 'MINUTES') {
-            bat """
-            echo Waiting for VM SSH & cloud-init...
-            ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-            "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
-               echo 'cloud-init still running...';
-               sleep 15;
-             done;
-             echo 'cloud-init completed'"
-            """
-          }
-        }
-      }
+    stage('Wait for SSH') {
+  steps {
+    withCredentials([sshUserPrivateKey(
+      credentialsId: 'azure-token',
+      keyFileVariable: 'SSH_KEY'
+    )]) {
+      bat """
+      echo Waiting for SSH...
+      for /L %%i in (1,1,20) do (
+        ssh -i %SSH_KEY% -o StrictHostKeyChecking=no -o ConnectTimeout=10 %SSH_USER%@%VM_IP% "echo SSH OK" && exit /b 0
+        echo Retry %%i...
+        timeout /t 15 >nul
+      )
+      exit /b 1
+      """
     }
+  }
+}
 
     stage('Install NGINX & Create HTML Pages') {
       steps {
