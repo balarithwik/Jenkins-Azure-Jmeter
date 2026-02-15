@@ -45,27 +45,24 @@ pipeline {
       }
     }
 
-    /* ✅ FIX 1: Proper cloud-init + SSH readiness */
     stage('Wait for SSH') {
-  steps {
-    withCredentials([sshUserPrivateKey(
-      credentialsId: 'azure-token',
-      keyFileVariable: 'SSH_KEY'
-    )]) {
-      bat """
-      echo Waiting for SSH...
-      for /L %%i in (1,1,20) do (
-        ssh -i %SSH_KEY% -o StrictHostKeyChecking=no -o ConnectTimeout=10 %SSH_USER%@%VM_IP% "echo SSH OK" && exit /b 0
-        echo Retry %%i...
-        timeout /t 15 >nul
-      )
-      exit /b 1
-      """
+      steps {
+        withCredentials([sshUserPrivateKey(
+          credentialsId: 'azure-token',
+          keyFileVariable: 'SSH_KEY'
+        )]) {
+          bat """
+          for /L %%i in (1,1,30) do (
+            ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% "echo SSH ready" && exit /b 0
+            timeout /t 15 >nul
+          )
+          exit /b 1
+          """
+        }
+      }
     }
-  }
-}
 
-    stage('Install NGINX & Create HTML Pages') {
+    stage('Wait for Kubernetes') {
       steps {
         withCredentials([sshUserPrivateKey(
           credentialsId: 'azure-token',
@@ -73,20 +70,29 @@ pipeline {
         )]) {
           bat """
           ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "sudo apt-get update -y &&
-           sudo apt-get install -y nginx &&
-           sudo rm -rf /var/www/html/* &&
-           echo '<h1>Home Page</h1>'    | sudo tee /var/www/html/index.html &&
-           echo '<h1>About Page</h1>'   | sudo tee /var/www/html/about.html &&
-           echo '<h1>Contact Page</h1>' | sudo tee /var/www/html/contact.html &&
-           sudo systemctl enable nginx &&
-           sudo systemctl restart nginx"
+          "until kubectl get nodes; do echo waiting for k8s; sleep 15; done"
           """
         }
       }
     }
 
-    /* ✅ FIX 2: Idempotent Java + JMeter install */
+    stage('Deploy NGINX & MySQL (Kubernetes)') {
+      steps {
+        withCredentials([sshUserPrivateKey(
+          credentialsId: 'azure-token',
+          keyFileVariable: 'SSH_KEY'
+        )]) {
+          bat """
+          scp -r -i %SSH_KEY% %SSH_OPTS% k8s %SSH_USER%@%VM_IP%:/home/azureuser/
+          ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
+          "kubectl apply -f k8s/nginx-configmap.yaml &&
+           kubectl apply -f k8s/nginx-deployment.yaml &&
+           kubectl apply -f k8s/mysql-deployment.yaml"
+          """
+        }
+      }
+    }
+
     stage('Install Java & JMeter') {
       steps {
         withCredentials([sshUserPrivateKey(
@@ -95,7 +101,8 @@ pipeline {
         )]) {
           bat """
           ssh -i %SSH_KEY% %SSH_OPTS% %SSH_USER%@%VM_IP% ^
-          "sudo apt-get install -y openjdk-11-jdk wget unzip zip &&
+          "sudo apt-get update &&
+           sudo apt-get install -y openjdk-11-jdk wget unzip &&
            if [ ! -d apache-jmeter-5.6.3 ]; then
              wget https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz &&
              tar -xzf apache-jmeter-5.6.3.tgz;
@@ -112,14 +119,13 @@ pipeline {
           keyFileVariable: 'SSH_KEY'
         )]) {
           bat """
-          scp -i %SSH_KEY% %SSH_OPTS% ^
-          web_perf_test.jmx %SSH_USER%@%VM_IP%:/home/azureuser/
+          scp -i %SSH_KEY% %SSH_OPTS% jmeter/web_perf_test.jmx ^
+          %SSH_USER%@%VM_IP%:/home/azureuser/
           """
         }
       }
     }
 
-    /* ✅ FIX 3: Explicit HOST injection (no confusion) */
     stage('Run JMeter Test & Generate Report') {
       steps {
         withCredentials([sshUserPrivateKey(
@@ -131,6 +137,7 @@ pipeline {
           "/home/azureuser/apache-jmeter-5.6.3/bin/jmeter -n ^
            -t /home/azureuser/web_perf_test.jmx ^
            -JHOST=%VM_IP% ^
+           -JPORT=30080 ^
            -l results.jtl ^
            -e -o report &&
            zip -r jmeter-report.zip report"
@@ -162,10 +169,10 @@ Hi Team,
 
 JMeter performance test executed successfully.
 
-Target Host:
-${VM_IP}
+Target:
+http://${VM_IP}:30080
 
-HTML report is attached.
+Report attached.
 
 Build URL:
 ${BUILD_URL}
@@ -180,10 +187,9 @@ Jenkins
     }
   }
 
-  /* ✅ FIX 4: Guaranteed cleanup */
   post {
     always {
-      echo "Destroying infrastructure (mandatory cleanup)"
+      echo "Destroying infrastructure"
       bat 'terraform destroy -auto-approve'
     }
   }
