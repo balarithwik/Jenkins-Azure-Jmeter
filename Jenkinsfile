@@ -91,20 +91,7 @@ pipeline {
       env.APP_IP = bat(
         returnStdout: true,
         script: '''
-        powershell -Command ^
-        "$ip=''; ^
-        for ($i=0; $i -lt 40; $i++) { ^
-          try { ^
-            $svc = kubectl get svc nginx -o json | ConvertFrom-Json; ^
-            $ip = $svc.status.loadBalancer.ingress[0].ip; ^
-            if ($ip) { ^
-              Write-Output $ip; ^
-              exit 0 ^
-            } ^
-          } catch {} ^
-          Start-Sleep -Seconds 10 ^
-        } ^
-        exit 1"
+powershell -NoProfile -Command "$ip=''; for($i=0;$i -lt 40;$i++){ try { $svc=kubectl get svc nginx -o json | ConvertFrom-Json; $ip=$svc.status.loadBalancer.ingress[0].ip; if($ip){ Write-Output $ip; exit 0 } } catch {} Start-Sleep -Seconds 10 }; exit 1"
         '''
       ).trim()
     }
