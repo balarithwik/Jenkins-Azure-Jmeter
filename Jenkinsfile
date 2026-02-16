@@ -61,18 +61,20 @@ pipeline {
         kubectl apply -f k8s/nginx-configmap.yaml
         kubectl apply -f k8s/mysql-deployment.yaml
         kubectl apply -f k8s/nginx-deployment.yaml
-        kubectl apply -f k8s/nginx-service.yaml
         '''
       }
     }
 
-    stage('Wait for NGINX Service') {
+    stage('Wait for NGINX LoadBalancer IP') {
       steps {
         script {
           env.APP_IP = bat(
             script: '''
-            kubectl get svc nginx ^
-              -o jsonpath="{.status.loadBalancer.ingress[0].ip}"
+            for /L %%i in (1,1,30) do (
+              kubectl get svc nginx ^
+                -o jsonpath="{.status.loadBalancer.ingress[0].ip}" && exit /b 0
+              timeout /t 10 >nul
+            )
             ''',
             returnStdout: true
           ).trim()
@@ -80,11 +82,12 @@ pipeline {
 
         bat '''
         if "%APP_IP%"=="" (
-          echo Waiting for LoadBalancer IP...
-          timeout /t 30
+          echo Failed to fetch LoadBalancer IP
           exit /b 1
         )
         '''
+
+        echo "Application URL: http://${APP_IP}"
       }
     }
 
@@ -122,7 +125,7 @@ pipeline {
           body: """
 Hi Team,
 
-Performance testing completed.
+Performance testing completed successfully.
 
 Target URL:
 http://${APP_IP}

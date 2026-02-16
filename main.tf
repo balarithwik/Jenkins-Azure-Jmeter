@@ -15,16 +15,16 @@ terraform {
 provider "azurerm" {
   features {}
 
-  # IMPORTANT:
-  # Must be false in Jenkins so AKS provider gets registered
-  skip_provider_registration = false
+  # REQUIRED for Jenkins Service Principal
+  # Provider registration is handled via Azure CLI in Jenkins
+  skip_provider_registration = true
 }
 
 # -----------------------------
 # Variables
 # -----------------------------
 variable "location" {
-  # Azure prefers lowercase, no spaces
+  # Azure requires lowercase, no spaces
   default = "westus2"
 }
 
@@ -44,6 +44,9 @@ resource "azurerm_kubernetes_cluster" "aks" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = "demoaks"
+
+  # Pin Kubernetes version (avoids preview API issues)
+  kubernetes_version = "1.29.2"
 
   default_node_pool {
     name       = "system"
