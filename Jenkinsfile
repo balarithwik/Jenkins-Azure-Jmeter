@@ -113,22 +113,35 @@ throw "Failed to get LoadBalancer IP"
        JAVA & JMETER INSTALL STEPS
        ============================ */
 
-    stage('Install Java (if not exists)') {
-      steps {
-        powershell '''
-if (!(Test-Path "C:\\Java\\jdk-11")) {
+   stage('Install Java (if not exists)') {
+  steps {
+    powershell '''
+$javaHome = "C:\\Java\\jdk-11"
+
+if (!(Test-Path $javaHome)) {
   Write-Host "Installing Java 11..."
-  Invoke-WebRequest `
-    -Uri https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip `
-    -OutFile java.zip
-  Expand-Archive java.zip C:\\Java -Force
-  Rename-Item C:\\Java\\jdk-11* C:\\Java\\jdk-11
-} else {
+
+  $zip = "java.zip"
+  $url = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
+
+  Invoke-WebRequest -Uri $url -OutFile $zip
+  Expand-Archive $zip C:\\Java -Force
+
+  $extracted = Get-ChildItem C:\\Java | Where-Object { $_.Name -like "jdk-11*" } | Select-Object -First 1
+
+  if ($null -eq $extracted) {
+    throw "JDK extraction failed"
+  }
+
+  Rename-Item $extracted.FullName $javaHome
+  Write-Host "Java installed successfully"
+}
+else {
   Write-Host "Java already installed"
 }
 '''
-      }
-    }
+  }
+}
 
     stage('Install JMeter (if not exists)') {
       steps {
