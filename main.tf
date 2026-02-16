@@ -15,8 +15,7 @@ terraform {
 provider "azurerm" {
   features {}
 
-  # REQUIRED for Jenkins Service Principal
-  # Provider registration is done explicitly via Azure CLI in Jenkins
+  # Provider registration handled via Azure CLI in Jenkins
   skip_provider_registration = true
 }
 
@@ -24,7 +23,6 @@ provider "azurerm" {
 # Variables
 # -----------------------------
 variable "location" {
-  # Azure requires lowercase, no spaces
   default = "westus2"
 }
 
@@ -45,13 +43,10 @@ resource "azurerm_kubernetes_cluster" "aks" {
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = "demoaks"
 
-  # DO NOT pin kubernetes_version
-  # Avoids preview API selection issues in Jenkins
-
   default_node_pool {
     name       = "system"
     node_count = 2
-    vm_size    = "Standard_DS2_v2"
+    vm_size    = "Standard_B2s_v2"   # ✅ ALLOWED SKU
   }
 
   identity {
@@ -62,7 +57,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   local_account_disabled            = false
 
   network_profile {
-    network_plugin = "azure"
+    network_plugin    = "azure"
     load_balancer_sku = "standard"
   }
 
