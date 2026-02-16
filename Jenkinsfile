@@ -18,6 +18,26 @@ pipeline {
             url: 'https://github.com/balarithwik/Jenkins-Azure-Jmeter.git'
       }
     }
+stage('Register Azure Resource Providers') {
+  steps {
+    bat '''
+    az login --service-principal ^
+      -u %ARM_CLIENT_ID% ^
+      -p %ARM_CLIENT_SECRET% ^
+      --tenant %ARM_TENANT_ID%
+
+    az account set --subscription %ARM_SUBSCRIPTION_ID%
+
+    az provider register --namespace Microsoft.ContainerService
+    az provider register --namespace Microsoft.Compute
+    az provider register --namespace Microsoft.Network
+    az provider register --namespace Microsoft.Storage
+
+    echo Waiting for provider registration...
+    timeout /t 30
+    '''
+  }
+}
 
     stage('Terraform Init') {
       steps {

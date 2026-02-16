@@ -16,7 +16,7 @@ provider "azurerm" {
   features {}
 
   # REQUIRED for Jenkins Service Principal
-  # Provider registration is handled via Azure CLI in Jenkins
+  # Provider registration is done explicitly via Azure CLI in Jenkins
   skip_provider_registration = true
 }
 
@@ -45,8 +45,8 @@ resource "azurerm_kubernetes_cluster" "aks" {
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = "demoaks"
 
-  # Pin Kubernetes version (avoids preview API issues)
-  kubernetes_version = "1.29.2"
+  # DO NOT pin kubernetes_version
+  # Avoids preview API selection issues in Jenkins
 
   default_node_pool {
     name       = "system"
@@ -58,8 +58,12 @@ resource "azurerm_kubernetes_cluster" "aks" {
     type = "SystemAssigned"
   }
 
+  role_based_access_control_enabled = true
+  local_account_disabled            = false
+
   network_profile {
     network_plugin = "azure"
+    load_balancer_sku = "standard"
   }
 
   tags = {
