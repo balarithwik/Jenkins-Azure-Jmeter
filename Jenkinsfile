@@ -42,8 +42,8 @@ pipeline {
         az account set --subscription %ARM_SUBSCRIPTION_ID%
 
         az aks get-credentials ^
-          --resource-group my-rg ^
-          --name my-aks ^
+          --resource-group demo-rg ^
+          --name demo-aks ^
           --overwrite-existing
         '''
       }
@@ -51,9 +51,7 @@ pipeline {
 
     stage('Wait for Kubernetes Ready') {
       steps {
-        bat '''
-        kubectl wait --for=condition=Ready nodes --all --timeout=300s
-        '''
+        bat 'kubectl wait --for=condition=Ready nodes --all --timeout=300s'
       }
     }
 
@@ -87,8 +85,6 @@ pipeline {
           exit /b 1
         )
         '''
-
-        echo "Application URL: http://${APP_IP}"
       }
     }
 
@@ -126,7 +122,7 @@ pipeline {
           body: """
 Hi Team,
 
-Performance testing completed successfully.
+Performance testing completed.
 
 Target URL:
 http://${APP_IP}

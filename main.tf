@@ -21,14 +21,6 @@ variable "location" {
   default = "West US 2"
 }
 
-variable "admin_username" {
-  default = "azureuser"
-}
-
-variable "ssh_public_key_path" {
-  default = "C:/Users/Bala/.ssh/id_rsa.pub"
-}
-
 # -----------------------------
 # Resource Group
 # -----------------------------
@@ -38,131 +30,40 @@ resource "azurerm_resource_group" "rg" {
 }
 
 # -----------------------------
-# Networking
+# AKS Cluster
 # -----------------------------
-resource "azurerm_virtual_network" "vnet" {
-  name                = "demo-vnet"
-  address_space       = ["10.0.0.0/16"]
-  location            = var.location
+resource "azurerm_kubernetes_cluster" "aks" {
+  name                = "demo-aks"
+  location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-}
+  dns_prefix          = "demoaks"
 
-resource "azurerm_subnet" "subnet" {
-  name                 = "demo-subnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
-
-resource "azurerm_public_ip" "vm_ip" {
-  name                = "vm-public-ip"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-resource "azurerm_network_security_group" "nsg" {
-  name                = "demo-nsg"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  security_rule {
-    name                       = "SSH"
-    priority                   = 1001
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
+  default_node_pool {
+    name       = "system"
+    node_count = 2
+    vm_size    = "Standard_DS2_v2"
   }
 
-  security_rule {
-    name                       = "HTTP"
-    priority                   = 1002
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "80"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
+  identity {
+    type = "SystemAssigned"
   }
 
-  security_rule {
-    name                       = "NodePort"
-    priority                   = 1003
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "30000-32767"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-}
-
-resource "azurerm_network_interface" "nic" {
-  name                = "demo-nic"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  ip_configuration {
-    name                          = "primary"
-    subnet_id                     = azurerm_subnet.subnet.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.vm_ip.id
-  }
-}
-
-resource "azurerm_network_interface_security_group_association" "assoc" {
-  network_interface_id      = azurerm_network_interface.nic.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-# -----------------------------
-# Linux VM (cloud-init only)
-# -----------------------------
-resource "azurerm_linux_virtual_machine" "vm" {
-  name                = "demo-vm"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = var.location
-  size                = "Standard_D4s_v3"
-  admin_username      = var.admin_username
-
-  network_interface_ids = [
-    azurerm_network_interface.nic.id
-  ]
-
-  admin_ssh_key {
-    username   = var.admin_username
-    public_key = file(var.ssh_public_key_path)
+  network_profile {
+    network_plugin = "azure"
   }
 
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
+  tags = {
+    environment = "demo"
   }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-focal"
-    sku       = "20_04-lts-gen2"
-    version   = "latest"
-  }
-
-  custom_data = base64encode(file("${path.module}/cloud-init.yaml"))
-
-  depends_on = [
-    azurerm_network_interface_security_group_association.assoc
-  ]
 }
 
 # -----------------------------
 # Outputs
 # -----------------------------
-output "vm_public_ip" {
-  value = azurerm_public_ip.vm_ip.ip_address
+output "aks_name" {
+  value = azurerm_kubernetes_cluster.aks.name
+}
+
+output "resource_group" {
+  value = azurerm_resource_group.rg.name
 }
