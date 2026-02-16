@@ -85,36 +85,40 @@ pipeline {
       }
     }
 
-    stage('Wait for NGINX LoadBalancer IP') {
-      steps {
-        script {
-          env.APP_IP = bat(
-            script: '''
-            for /L %%i in (1,1,40) do (
-              for /f %%A in ('kubectl get svc nginx -o jsonpath="{.status.loadBalancer.ingress[0].ip}"') do (
-                if not "%%A"=="" (
-                  echo %%A
-                  exit /b 0
-                )
-              )
-              timeout /t 10 >nul
-            )
-            exit /b 1
-            ''',
-            returnStdout: true
-          ).trim()
-        }
-
-        bat '''
-        if "%APP_IP%"=="" (
-          echo Failed to fetch LoadBalancer IP
-          exit /b 1
-        )
+  stage('Wait for NGINX LoadBalancer IP') {
+  steps {
+    script {
+      env.APP_IP = bat(
+        returnStdout: true,
+        script: '''
+        powershell -Command ^
+        "$ip=''; ^
+        for ($i=0; $i -lt 40; $i++) { ^
+          try { ^
+            $svc = kubectl get svc nginx -o json | ConvertFrom-Json; ^
+            $ip = $svc.status.loadBalancer.ingress[0].ip; ^
+            if ($ip) { ^
+              Write-Output $ip; ^
+              exit 0 ^
+            } ^
+          } catch {} ^
+          Start-Sleep -Seconds 10 ^
+        } ^
+        exit 1"
         '''
-
-        echo "Application URL: http://${APP_IP}"
-      }
+      ).trim()
     }
+
+    bat '''
+    if "%APP_IP%"=="" (
+      echo Failed to fetch LoadBalancer IP
+      exit /b 1
+    )
+    '''
+
+    echo "Application URL: http://${APP_IP}"
+  }
+}
 
     stage('Run JMeter Test (Docker)') {
       steps {
