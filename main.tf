@@ -9,16 +9,23 @@ terraform {
   }
 }
 
+# -----------------------------
+# Provider
+# -----------------------------
 provider "azurerm" {
   features {}
-  skip_provider_registration = true
+
+  # IMPORTANT:
+  # Must be false in Jenkins so AKS provider gets registered
+  skip_provider_registration = false
 }
 
 # -----------------------------
 # Variables
 # -----------------------------
 variable "location" {
-  default = "West US 2"
+  # Azure prefers lowercase, no spaces
+  default = "westus2"
 }
 
 # -----------------------------
