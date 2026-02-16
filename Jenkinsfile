@@ -18,26 +18,27 @@ pipeline {
             url: 'https://github.com/balarithwik/Jenkins-Azure-Jmeter.git'
       }
     }
-stage('Register Azure Resource Providers') {
-  steps {
-    bat '''
-    az login --service-principal ^
-      -u %ARM_CLIENT_ID% ^
-      -p %ARM_CLIENT_SECRET% ^
-      --tenant %ARM_TENANT_ID%
 
-    az account set --subscription %ARM_SUBSCRIPTION_ID%
+    stage('Azure Login & Provider Registration') {
+      steps {
+        bat '''
+        az login --service-principal ^
+          -u %ARM_CLIENT_ID% ^
+          -p %ARM_CLIENT_SECRET% ^
+          --tenant %ARM_TENANT_ID%
 
-    az provider register --namespace Microsoft.ContainerService
-    az provider register --namespace Microsoft.Compute
-    az provider register --namespace Microsoft.Network
-    az provider register --namespace Microsoft.Storage
+        az account set --subscription %ARM_SUBSCRIPTION_ID%
 
-    echo Waiting for provider registration...
-    timeout /t 30
-    '''
-  }
-}
+        az provider register --namespace Microsoft.ContainerService
+        az provider register --namespace Microsoft.Compute
+        az provider register --namespace Microsoft.Network
+        az provider register --namespace Microsoft.Storage
+
+        echo Waiting for provider registration...
+        timeout /t 30
+        '''
+      }
+    }
 
     stage('Terraform Init') {
       steps {
@@ -54,24 +55,23 @@ stage('Register Azure Resource Providers') {
     stage('Configure Kubernetes Access') {
       steps {
         bat '''
-        az login --service-principal ^
-          -u %ARM_CLIENT_ID% ^
-          -p %ARM_CLIENT_SECRET% ^
-          --tenant %ARM_TENANT_ID%
-
-        az account set --subscription %ARM_SUBSCRIPTION_ID%
-
         az aks get-credentials ^
           --resource-group demo-rg ^
           --name demo-aks ^
           --overwrite-existing
+
+        kubectl config current-context
+        kubectl cluster-info
         '''
       }
     }
 
     stage('Wait for Kubernetes Ready') {
       steps {
-        bat 'kubectl wait --for=condition=Ready nodes --all --timeout=300s'
+        bat '''
+        kubectl get nodes
+        kubectl wait --for=condition=Ready nodes --all --timeout=600s
+        '''
       }
     }
 
@@ -90,11 +90,16 @@ stage('Register Azure Resource Providers') {
         script {
           env.APP_IP = bat(
             script: '''
-            for /L %%i in (1,1,30) do (
-              kubectl get svc nginx ^
-                -o jsonpath="{.status.loadBalancer.ingress[0].ip}" && exit /b 0
+            for /L %%i in (1,1,40) do (
+              for /f %%A in ('kubectl get svc nginx -o jsonpath="{.status.loadBalancer.ingress[0].ip}"') do (
+                if not "%%A"=="" (
+                  echo %%A
+                  exit /b 0
+                )
+              )
               timeout /t 10 >nul
             )
+            exit /b 1
             ''',
             returnStdout: true
           ).trim()
@@ -115,8 +120,8 @@ stage('Register Azure Resource Providers') {
       steps {
         bat '''
         docker run --rm ^
-          -v %CD%/jmeter:/jmeter ^
-          -v %CD%/jmeter-report:/report ^
+          -v %CD%\\jmeter:/jmeter ^
+          -v %CD%\\jmeter-report:/report ^
           justb4/jmeter:5.6.3 ^
           -n ^
           -t /jmeter/web_perf_test.jmx ^
