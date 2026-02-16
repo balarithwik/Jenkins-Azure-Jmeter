@@ -86,28 +86,32 @@ pipeline {
     }
 
     stage('Wait for NGINX LoadBalancer IP') {
-      steps {
-        powershell '''
+  steps {
+    powershell '''
 $ip = ""
 for ($i = 0; $i -lt 40; $i++) {
   try {
     $svc = kubectl get svc nginx -o json | ConvertFrom-Json
     $ip = $svc.status.loadBalancer.ingress[0].ip
     if ($ip) {
-      Set-Content app_ip.txt $ip
+      Write-Host "NGINX IP found: $ip"
+      Write-Output "APP_IP=$ip" | Out-File -FilePath app_ip.env -Encoding ascii
       exit 0
     }
-  } catch {}
-  Start-Sleep 10
+  } catch {
+    Write-Host "Waiting for LoadBalancer IP..."
+  }
+  Start-Sleep -Seconds 10
 }
-throw "Failed to get LoadBalancer IP"
+throw "Failed to get NGINX LoadBalancer IP"
 '''
-        bat '''
-        set /p APP_IP=<app_ip.txt
-        echo Application URL: http://%APP_IP%
-        '''
-      }
+    script {
+      def props = readProperties file: 'app_ip.env'
+      env.APP_IP = props.APP_IP
     }
+    echo "Application URL: http://${env.APP_IP}"
+  }
+}
 
     /* ============================
        JAVA & JMETER INSTALL STEPS
