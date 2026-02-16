@@ -8,6 +8,10 @@ pipeline {
     ARM_TENANT_ID       = credentials('ARM_TENANT_ID')
 
     TF_IN_AUTOMATION = "true"
+
+    JAVA_HOME   = "C:\\Java\\jdk-11"
+    JMETER_HOME = "C:\\JMeter\\apache-jmeter-5.6.3"
+    PATH = "${JAVA_HOME}\\bin;${JMETER_HOME}\\bin;${env.PATH}"
   }
 
   stages {
@@ -34,7 +38,6 @@ pipeline {
         az provider register --namespace Microsoft.Network
         az provider register --namespace Microsoft.Storage
 
-        echo Waiting for provider registration...
         timeout /t 30
         '''
       }
@@ -59,9 +62,6 @@ pipeline {
           --resource-group demo-rg ^
           --name demo-aks ^
           --overwrite-existing
-
-        kubectl config current-context
-        kubectl cluster-info
         '''
       }
     }
@@ -85,32 +85,79 @@ pipeline {
       }
     }
 
- stage('Wait for NGINX LoadBalancer IP') {
-  steps {
-    powershell '''
+    stage('Wait for NGINX LoadBalancer IP') {
+      steps {
+        powershell '''
 $ip = ""
 for ($i = 0; $i -lt 40; $i++) {
   try {
     $svc = kubectl get svc nginx -o json | ConvertFrom-Json
     $ip = $svc.status.loadBalancer.ingress[0].ip
     if ($ip) {
-      Set-Content -Path app_ip.txt -Value $ip
-      Write-Host "NGINX IP found: $ip"
+      Set-Content app_ip.txt $ip
       exit 0
     }
-  } catch {
-    Write-Host "Waiting for LoadBalancer IP..."
-  }
-  Start-Sleep -Seconds 10
+  } catch {}
+  Start-Sleep 10
 }
-throw "Failed to get NGINX LoadBalancer IP"
+throw "Failed to get LoadBalancer IP"
 '''
-    bat '''
-    set /p APP_IP=<app_ip.txt
-    echo Application URL: http://%APP_IP%
-    '''
-  }
+        bat '''
+        set /p APP_IP=<app_ip.txt
+        echo Application URL: http://%APP_IP%
+        '''
+      }
+    }
+
+    /* ============================
+       JAVA & JMETER INSTALL STEPS
+       ============================ */
+
+    stage('Install Java (if not exists)') {
+      steps {
+        powershell '''
+if (!(Test-Path "C:\\Java\\jdk-11")) {
+  Write-Host "Installing Java 11..."
+  Invoke-WebRequest `
+    -Uri https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip `
+    -OutFile java.zip
+  Expand-Archive java.zip C:\\Java -Force
+  Rename-Item C:\\Java\\jdk-11* C:\\Java\\jdk-11
+} else {
+  Write-Host "Java already installed"
 }
+'''
+      }
+    }
+
+    stage('Install JMeter (if not exists)') {
+      steps {
+        powershell '''
+if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
+  Write-Host "Installing Apache JMeter..."
+  Invoke-WebRequest `
+    -Uri https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip `
+    -OutFile jmeter.zip
+  Expand-Archive jmeter.zip C:\\JMeter -Force
+} else {
+  Write-Host "JMeter already installed"
+}
+'''
+      }
+    }
+
+    stage('Verify Java & JMeter') {
+      steps {
+        bat '''
+        java -version
+        jmeter -v
+        '''
+      }
+    }
+
+    /* ============================
+       JMETER EXECUTION
+       ============================ */
 
     stage('Run JMeter Test (Docker)') {
       steps {
