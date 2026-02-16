@@ -41,7 +41,7 @@ stage('Register Azure Resource Providers') {
 
     stage('Terraform Init') {
       steps {
-        bat 'terraform init -input=false'
+        bat 'terraform init -upgrade -input=false'
       }
     }
 
