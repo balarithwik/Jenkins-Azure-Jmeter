@@ -172,21 +172,20 @@ if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
        JMETER EXECUTION
        ============================ */
 
-    stage('Run JMeter Test (Docker)') {
-      steps {
-        bat '''
-        docker run --rm ^
-          -v %CD%\\jmeter:/jmeter ^
-          -v %CD%\\jmeter-report:/report ^
-          justb4/jmeter:5.6.3 ^
-          -n ^
-          -t /jmeter/web_perf_test.jmx ^
-          -JHOST=%APP_IP% ^
-          -l /report/results.jtl ^
-          -e -o /report/html
-        '''
-      }
-    }
+   stage('Run JMeter Test (Native)') {
+  steps {
+    bat '''
+    if not exist jmeter-report mkdir jmeter-report
+
+    jmeter ^
+      -n ^
+      -t jmeter\\web_perf_test.jmx ^
+      -JHOST=%APP_IP% ^
+      -l jmeter-report\\results.jtl ^
+      -e -o jmeter-report\\html
+    '''
+  }
+}
 
     stage('Zip JMeter Report') {
       steps {
