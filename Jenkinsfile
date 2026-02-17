@@ -194,6 +194,29 @@ if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
     '''
   }
 }
+stage('Wait for NGINX Deployment') {
+  steps {
+    bat '''
+    kubectl rollout status deployment/nginx --timeout=300s
+    kubectl get pods -l app=nginx
+    kubectl get endpoints nginx
+    '''
+  }
+}
+stage('Validate Application Endpoints') {
+  steps {
+    bat """
+    echo Validating Home Page
+    curl -f http://${APP_IP}/index.html || exit 1
+
+    echo Validating About Page
+    curl -f http://${APP_IP}/about.html || exit 1
+
+    echo Validating Contact Page
+    curl -f http://${APP_IP}/contact.html || exit 1
+    """
+  }
+}
 
     stage('Zip JMeter Report') {
       steps {
