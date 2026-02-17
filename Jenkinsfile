@@ -212,6 +212,7 @@ stage('Validate Application Endpoints') {
       -t jmeter\\web_perf_test.jmx ^
       -JHOST=%APP_IP% ^
       -JPORT=80 ^
+      -Jjtl=jmeter-report\\results.jtl ^
       -l jmeter-report\\results.jtl ^
       -e -o jmeter-report\\html
     '''
