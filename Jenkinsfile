@@ -173,27 +173,6 @@ if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
         '''
       }
     }
-
-    /* ============================
-       JMETER EXECUTION
-       ============================ */
-
-   stage('Run JMeter Test (Native)') {
-  steps {
-    bat '''
-    if exist jmeter-report rmdir /s /q jmeter-report
-    mkdir jmeter-report
-
-    jmeter ^
-      -n ^
-      -t jmeter\\web_perf_test.jmx ^
-      -JHOST=%APP_IP% ^
-      -JPORT=80 ^
-      -l jmeter-report\\results.jtl ^
-      -e -o jmeter-report\\html
-    '''
-  }
-}
 stage('Wait for NGINX Deployment') {
   steps {
     bat '''
@@ -215,6 +194,27 @@ stage('Validate Application Endpoints') {
     echo Validating Contact Page
     curl -f http://${APP_IP}/contact.html || exit 1
     """
+  }
+}
+
+    /* ============================
+       JMETER EXECUTION
+       ============================ */
+
+   stage('Run JMeter Test (Native)') {
+  steps {
+    bat '''
+    if exist jmeter-report rmdir /s /q jmeter-report
+    mkdir jmeter-report
+
+    jmeter ^
+      -n ^
+      -t jmeter\\web_perf_test.jmx ^
+      -JHOST=%APP_IP% ^
+      -JPORT=80 ^
+      -l jmeter-report\\results.jtl ^
+      -e -o jmeter-report\\html
+    '''
   }
 }
 
