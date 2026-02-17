@@ -1,26 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
+
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Web Performance Test" enabled="true">
-      <stringProp name="TestPlan.comments">Simple web performance test</stringProp>
+      <stringProp name="TestPlan.comments">CI-safe web performance test</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+
+      <!-- CI variables -->
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="HOST" elementType="Argument">
+            <stringProp name="Argument.name">HOST</stringProp>
+            <stringProp name="Argument.value">localhost</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">80</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
     </TestPlan>
+
     <hashTree>
 
+      <!-- Thread Group -->
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Users" enabled="true">
         <stringProp name="ThreadGroup.num_threads">5</stringProp>
         <stringProp name="ThreadGroup.ramp_time">5</stringProp>
-        <stringProp name="ThreadGroup.duration">30</stringProp>
-        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+
+        <!-- REQUIRED -->
+        <stringProp name="ThreadGroup.loops">1</stringProp>
       </ThreadGroup>
 
       <hashTree>
 
+        <!-- HTTP Defaults -->
+        <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+          <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+          <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+
         <!-- Home Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Home Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
-          <stringProp name="HTTPSampler.port">${__P(PORT,80)}</stringProp>
           <stringProp name="HTTPSampler.path">/</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
         </HTTPSamplerProxy>
@@ -28,8 +55,6 @@
 
         <!-- About Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="About Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
-          <stringProp name="HTTPSampler.port">${__P(PORT,80)}</stringProp>
           <stringProp name="HTTPSampler.path">/about.html</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
         </HTTPSamplerProxy>
@@ -37,8 +62,6 @@
 
         <!-- Contact Page -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Contact Page" enabled="true">
-          <stringProp name="HTTPSampler.domain">${__P(HOST)}</stringProp>
-          <stringProp name="HTTPSampler.port">${__P(PORT,80)}</stringProp>
           <stringProp name="HTTPSampler.path">/contact.html</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
         </HTTPSamplerProxy>
