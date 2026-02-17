@@ -181,7 +181,8 @@ if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
    stage('Run JMeter Test (Native)') {
   steps {
     bat '''
-    if not exist jmeter-report mkdir jmeter-report
+    if exist jmeter-report rmdir /s /q jmeter-report
+    mkdir jmeter-report
 
     jmeter ^
       -n ^
