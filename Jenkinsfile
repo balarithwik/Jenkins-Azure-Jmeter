@@ -188,6 +188,7 @@ if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
       -n ^
       -t jmeter\\web_perf_test.jmx ^
       -JHOST=%APP_IP% ^
+      -JPORT=80 ^
       -l jmeter-report\\results.jtl ^
       -e -o jmeter-report\\html
     '''
