@@ -233,8 +233,6 @@ stage('Run JMeter Test (Native)') {
 stage('Extract Performance Metrics') {
   steps {
     powershell '''
-
-
 $stats = Get-ChildItem -Recurse jmeter-report\\html | Where-Object { $_.Name -eq "statistics.json" }
 
 $data = Get-Content $stats.FullName | ConvertFrom-Json
@@ -245,14 +243,17 @@ $tps = [math]::Round($total.throughput,2)
 $error = $total.errorPct
 $avg = $total.meanResTime
 
-echo "USERS=$users" >> metrics.txt
-echo "TPS=$tps" >> metrics.txt
-echo "ERROR_RATE=$error" >> metrics.txt
-echo "AVG_RESPONSE=$avg" >> metrics.txt
-'''
-}
-}
+$metrics = @"
+USERS=$users
+TPS=$tps
+ERROR_RATE=$error
+AVG_RESPONSE=$avg
+"@
 
+$metrics | Out-File -FilePath metrics.txt -Encoding ascii
+'''
+  }
+}
 
 stage('Validate Python & Ollama') {
   steps {
@@ -293,7 +294,7 @@ stage('Email JMeter Report') {
   steps {
     script {
 
-      def metrics = readFile('metrics.txt').split("\\n")
+      def metrics = readFile(file: 'metrics.txt').trim().split("\\r?\\n")
 
       def USERS = metrics.find { it.startsWith("USERS") }?.split("=")[1]
       def TPS = metrics.find { it.startsWith("TPS") }?.split("=")[1]
