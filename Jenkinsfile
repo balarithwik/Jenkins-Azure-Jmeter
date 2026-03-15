@@ -235,7 +235,7 @@ stage('Extract Performance Metrics') {
     powershell '''
 
 
-$stats = Get-ChildItem -Recurse jmeter-report\html | Where-Object { $_.Name -eq "statistics.json" }
+$stats = Get-ChildItem -Recurse jmeter-report\\html | Where-Object { $_.Name -eq "statistics.json" }
 
 $data = Get-Content $stats.FullName | ConvertFrom-Json
 $total = $data.Total
