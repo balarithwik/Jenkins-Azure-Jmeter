@@ -11,7 +11,7 @@ MODEL = "phi3"
 
 def extract_metrics(report_path):
 
-```
+
 stats_file = None
 
 for root, dirs, files in os.walk(report_path):
@@ -41,11 +41,11 @@ for key in data:
         endpoints[key] = data[key]["meanResTime"]
 
 return metrics, endpoints
-```
+
 
 def performance_score(metrics):
 
-```
+
 score = 100
 
 if metrics["avg"] > 1000:
@@ -62,11 +62,11 @@ if metrics["throughput"] < 10:
     score -= 20
 
 return max(score, 0)
-```
+
 
 def grade(score):
 
-```
+
 if score >= 90:
     return "A"
 elif score >= 75:
@@ -75,16 +75,16 @@ elif score >= 60:
     return "C"
 else:
     return "D"
-```
+
 
 def slowest_endpoint(endpoints):
 return max(endpoints, key=endpoints.get)
 
 def generate_ai_analysis(metrics, slowest):
 
-```
+
 prompt = f"""
-```
+
 
 You are a performance testing expert.
 
@@ -114,7 +114,7 @@ Provide:
 
 def create_graph(metrics, report_path):
 
-```
+
 labels = ["Avg", "P90"]
 values = [metrics["avg"], metrics["p90"]]
 
@@ -127,11 +127,11 @@ graph = os.path.join(report_path, "performance_graph.png")
 plt.savefig(graph)
 
 return graph
-```
+
 
 def generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, graph):
 
-```
+
 pdf_path = os.path.join(report_path, "AI_Performance_Report.pdf")
 
 styles = getSampleStyleSheet()
@@ -160,11 +160,11 @@ doc = SimpleDocTemplate(pdf_path)
 doc.build(story)
 
 return pdf_path
-```
+
 
 def main():
 
-```
+
 report_path = sys.argv[1]
 
 metrics, endpoints = extract_metrics(report_path)
@@ -182,7 +182,7 @@ pdf = generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, gra
 
 print("AI Report Generated:", pdf)
 
-# Save score for Jenkins email
+# Save summary for Jenkins email
 summary_file = os.path.join(report_path, "ai_summary.txt")
 
 with open(summary_file, "w") as f:
@@ -192,7 +192,6 @@ with open(summary_file, "w") as f:
 
 print("AI summary saved:", summary_file)
 
-```
 
 if **name** == "**main**":
 main()
