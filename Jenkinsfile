@@ -7,19 +7,18 @@ ARM_CLIENT_SECRET   = credentials('ARM_CLIENT_SECRET')
 ARM_SUBSCRIPTION_ID = credentials('ARM_SUBSCRIPTION_ID')
 ARM_TENANT_ID       = credentials('ARM_TENANT_ID')
 
-```
 TF_IN_AUTOMATION = "true"
 
 JAVA_HOME   = "C:\\Java\\jdk-11"
 JMETER_HOME = "C:\\JMeter\\apache-jmeter-5.6.3"
 PATH = "${JAVA_HOME}\\bin;${JMETER_HOME}\\bin;${env.PATH}"
-```
+
 
 }
 
 stages {
 
-```
+
 stage('Checkout Code') {
   steps {
     git branch: 'main',
@@ -95,7 +94,7 @@ stage('Wait for NGINX LoadBalancer IP') {
       def ip = powershell(
         returnStdout: true,
         script: '''
-```
+
 
 $ip = ""
 for ($i = 0; $i -lt 40; $i++) {
@@ -115,7 +114,7 @@ throw "Failed to get NGINX LoadBalancer IP"
 '''
 ).trim()
 
-```
+
       env.APP_IP = ip
       echo "Application URL: http://${env.APP_IP}"
     }
@@ -125,7 +124,7 @@ throw "Failed to get NGINX LoadBalancer IP"
 stage('Install Java (if not exists)') {
   steps {
     powershell '''
-```
+
 
 $javaHome = "C:\Java\jdk-11"
 
@@ -154,11 +153,11 @@ Write-Host "Java already installed"
 }
 }
 
-```
+
 stage('Install JMeter (if not exists)') {
   steps {
     powershell '''
-```
+
 
 if (!(Test-Path "C:\JMeter\apache-jmeter-5.6.3")) {
 
@@ -178,7 +177,7 @@ Write-Host "JMeter already installed"
 }
 }
 
-```
+
 stage('Verify Java & JMeter') {
   steps {
     bat '''
@@ -234,7 +233,7 @@ stage('Run JMeter Test (Native)') {
 stage('Extract Performance Metrics') {
   steps {
     powershell '''
-```
+
 
 $stats = Get-ChildItem -Recurse jmeter-report\html | Where-Object { $_.Name -eq "statistics.json" }
 
@@ -254,7 +253,7 @@ echo "AVG_RESPONSE=$avg" >> metrics.txt
 }
 }
 
-```
+
 stage('Validate Python & Ollama') {
   steps {
     bat '''
@@ -304,7 +303,7 @@ stage('Email JMeter Report') {
       emailext(
         subject: "JMeter + GenAI Performance Report | Build #${BUILD_NUMBER}",
         body: """
-```
+
 
 Hi Team,
 
