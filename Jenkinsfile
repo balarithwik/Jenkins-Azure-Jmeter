@@ -340,7 +340,7 @@ Ephemeral AKS Performance Test Environment
 Regards,
 Jenkins CI Pipeline
 """,
-to: "[rithwik10122000@gmail.com](mailto:rithwik10122000@gmail.com)",
+to: "rithwik10122000@gmail.com",
 attachmentsPattern: "jmeter-report.zip"
 )
 }
