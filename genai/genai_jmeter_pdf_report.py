@@ -1,7 +1,7 @@
 import os
-import sys
 import json
 import requests
+import sys
 import matplotlib.pyplot as plt
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
@@ -9,150 +9,190 @@ from reportlab.lib.styles import getSampleStyleSheet
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "phi3"
 
-
-def find_statistics_file(report_path):
-    for root, dirs, files in os.walk(report_path):
-        if "statistics.json" in files:
-            return os.path.join(root, "statistics.json")
-    return None
-
-
 def extract_metrics(report_path):
 
-    stats_file = find_statistics_file(report_path)
+```
+stats_file = None
 
-    if not stats_file:
-        raise Exception("statistics.json not found")
+for root, dirs, files in os.walk(report_path):
+    if "statistics.json" in files:
+        stats_file = os.path.join(root, "statistics.json")
 
-    with open(stats_file) as f:
-        data = json.load(f)
+if not stats_file:
+    raise Exception("statistics.json not found")
 
-    total = data["Total"]
+with open(stats_file) as f:
+    data = json.load(f)
 
-    metrics = {
-        "samples": total["sampleCount"],
-        "error_pct": total["errorPct"],
-        "avg": total["meanResTime"],
-        "p90": total["pct1ResTime"],
-        "p95": total["pct2ResTime"],
-        "p99": total["pct3ResTime"],
-        "throughput": total["throughput"]
-    }
+total = data["Total"]
 
-    return metrics
+metrics = {
+    "samples": total["sampleCount"],
+    "error_pct": total["errorPct"],
+    "avg": total["meanResTime"],
+    "p90": total["pct3ResTime"],
+    "throughput": total["throughput"]
+}
 
+endpoints = {}
 
-def create_graphs(metrics, output_path):
+for key in data:
+    if key != "Total":
+        endpoints[key] = data[key]["meanResTime"]
 
-    latency_chart = os.path.join(output_path, "latency_chart.png")
+return metrics, endpoints
+```
 
-    labels = ["Average", "P90", "P95", "P99"]
-    values = [metrics["avg"], metrics["p90"], metrics["p95"], metrics["p99"]]
+def performance_score(metrics):
 
-    plt.bar(labels, values)
-    plt.title("Latency Distribution")
-    plt.ylabel("Response Time (ms)")
-    plt.savefig(latency_chart)
-    plt.clf()
+```
+score = 100
 
-    percentile_chart = os.path.join(output_path, "percentile_chart.png")
+if metrics["avg"] > 1000:
+    score -= 30
+elif metrics["avg"] > 500:
+    score -= 15
 
-    plt.plot(labels, values, marker='o')
-    plt.title("Latency Percentiles")
-    plt.ylabel("Response Time (ms)")
-    plt.savefig(percentile_chart)
-    plt.clf()
+if metrics["error_pct"] > 5:
+    score -= 40
+elif metrics["error_pct"] > 1:
+    score -= 20
 
-    return latency_chart, percentile_chart
+if metrics["throughput"] < 10:
+    score -= 20
 
+return max(score, 0)
+```
 
-def analyze_with_ollama(metrics):
+def grade(score):
 
-    prompt = f"""
-You are a performance engineer.
+```
+if score >= 90:
+    return "A"
+elif score >= 75:
+    return "B"
+elif score >= 60:
+    return "C"
+else:
+    return "D"
+```
 
-Analyze the following JMeter performance metrics.
+def slowest_endpoint(endpoints):
+return max(endpoints, key=endpoints.get)
 
-Total Requests: {metrics['samples']}
+def generate_ai_analysis(metrics, slowest):
+
+```
+prompt = f"""
+```
+
+You are a performance testing expert.
+
+Analyze the following JMeter results.
+
 Average Response Time: {metrics['avg']} ms
-P95 Latency: {metrics['p95']} ms
-Error Percentage: {metrics['error_pct']} %
 Throughput: {metrics['throughput']} req/sec
+Error Rate: {metrics['error_pct']} %
+Slowest Endpoint: {slowest}
 
 Provide:
 
-1. Performance Health Summary
-2. Bottleneck Analysis
-3. Risk Level
-4. Optimization Recommendations
-"""
+1. Performance insights
+2. Root cause analysis
+3. Optimization recommendations
+   """
 
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": MODEL,
-            "prompt": prompt,
-            "stream": False
-        }
-    )
+   payload = {
+   "model": MODEL,
+   "prompt": prompt,
+   "stream": False
+   }
 
-    return response.json()["response"]
+   r = requests.post(OLLAMA_URL, json=payload)
 
+   return r.json()["response"]
 
-def generate_pdf(report_path, metrics, analysis, charts):
+def create_graph(metrics, report_path):
 
-    pdf_file = os.path.join(report_path, "AI_Performance_Report.pdf")
+```
+labels = ["Avg", "P90"]
+values = [metrics["avg"], metrics["p90"]]
 
-    styles = getSampleStyleSheet()
-    elements = []
+plt.figure()
+plt.bar(labels, values)
+plt.title("Response Time Comparison")
 
-    elements.append(Paragraph("AI Performance Test Report", styles['Title']))
-    elements.append(Spacer(1,20))
+graph = os.path.join(report_path, "performance_graph.png")
 
-    summary = f"""
-Total Requests: {metrics['samples']}<br/>
-Average Response Time: {metrics['avg']} ms<br/>
-95th Percentile: {metrics['p95']} ms<br/>
-Error Percentage: {metrics['error_pct']} %<br/>
-Throughput: {metrics['throughput']} req/sec
-"""
+plt.savefig(graph)
 
-    elements.append(Paragraph(summary, styles['BodyText']))
-    elements.append(Spacer(1,20))
+return graph
+```
 
-    elements.append(Image(charts[0], width=400, height=250))
-    elements.append(Spacer(1,20))
+def generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, graph):
 
-    elements.append(Image(charts[1], width=400, height=250))
-    elements.append(Spacer(1,20))
+```
+pdf_path = os.path.join(report_path, "AI_Performance_Report.pdf")
 
-    elements.append(Paragraph("AI Analysis", styles['Heading2']))
-    elements.append(Paragraph(analysis.replace("\n","<br/>"), styles['BodyText']))
+styles = getSampleStyleSheet()
+story = []
 
-    doc = SimpleDocTemplate(pdf_file)
-    doc.build(elements)
+story.append(Paragraph("AI Performance Analysis Report", styles['Title']))
+story.append(Spacer(1,20))
 
-    return pdf_file
+story.append(Paragraph(f"Performance Score : {score}/100", styles['Heading2']))
+story.append(Paragraph(f"Performance Grade : {grade_val}", styles['Heading2']))
+story.append(Spacer(1,20))
 
+story.append(Paragraph(f"Average Response Time : {metrics['avg']} ms", styles['Normal']))
+story.append(Paragraph(f"Throughput : {metrics['throughput']} req/sec", styles['Normal']))
+story.append(Paragraph(f"Error Rate : {metrics['error_pct']} %", styles['Normal']))
+story.append(Paragraph(f"Slowest Endpoint : {slowest}", styles['Normal']))
+
+story.append(Spacer(1,20))
+story.append(Image(graph, width=400, height=250))
+
+story.append(Spacer(1,20))
+story.append(Paragraph("AI Insights", styles['Heading2']))
+story.append(Paragraph(ai_text.replace("\n","<br/>"), styles['Normal']))
+
+doc = SimpleDocTemplate(pdf_path)
+doc.build(story)
+
+return pdf_path
+```
 
 def main():
 
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <jmeter_html_folder>")
-        sys.exit(1)
+```
+report_path = sys.argv[1]
 
-    report_path = sys.argv[1]
+metrics, endpoints = extract_metrics(report_path)
 
-    metrics = extract_metrics(report_path)
+score = performance_score(metrics)
+grade_val = grade(score)
 
-    charts = create_graphs(metrics, report_path)
+slowest = slowest_endpoint(endpoints)
 
-    analysis = analyze_with_ollama(metrics)
+ai_text = generate_ai_analysis(metrics, slowest)
 
-    pdf = generate_pdf(report_path, metrics, analysis, charts)
+graph = create_graph(metrics, report_path)
 
-    print("AI Report Generated:", pdf)
+pdf = generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, graph)
 
+print("AI Report Generated:", pdf)
 
-if __name__ == "__main__":
-    main()
+# Save score for Jenkins email
+summary_file = os.path.join(report_path, "ai_summary.txt")
+
+with open(summary_file, "w") as f:
+    f.write(f"SCORE={score}\n")
+    f.write(f"GRADE={grade_val}\n")
+    f.write(f"SLOWEST={slowest}\n")
+
+print("AI summary saved:", summary_file)
+
+```
+
+if **name** == "**main**":
+main()

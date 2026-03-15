@@ -279,6 +279,24 @@ stage('Run GenAI Analysis (Ollama)') {
   }
 }
 
+stage('Read AI Analysis Results') {
+  steps {
+    script {
+
+      def ai = readFile(file: 'jmeter-report/html/ai_summary.txt').trim().split("\\r?\\n")
+
+      env.AI_SCORE = ai.find { it.startsWith("SCORE") }?.split("=")[1]
+      env.AI_GRADE = ai.find { it.startsWith("GRADE") }?.split("=")[1]
+      env.SLOWEST  = ai.find { it.startsWith("SLOWEST") }?.split("=")[1]
+
+      echo "AI Score: ${env.AI_SCORE}"
+      echo "AI Grade: ${env.AI_GRADE}"
+      echo "Slowest Endpoint: ${env.SLOWEST}"
+
+    }
+  }
+}
+
 stage('Zip JMeter Report') {
   steps {
     bat '''
@@ -305,7 +323,6 @@ stage('Email JMeter Report') {
         subject: "JMeter + GenAI Performance Report | Build #${BUILD_NUMBER}",
         body: """
 
-
 Hi Team,
 
 Performance testing completed successfully.
@@ -313,29 +330,28 @@ Performance testing completed successfully.
 Application URL:
 http://${APP_IP}
 
-## Performance Test Summary
-
+Performance Test Summary
+---------------------------------
 Concurrent Users : ${USERS}
 Throughput (TPS) : ${TPS}
 Error Rate       : ${ERROR} %
 Avg Response     : ${AVG} ms
 
-## GenAI Analysis
+AI Performance Analysis
+---------------------------------
+Performance Score : ${env.AI_SCORE}/100
+Performance Grade : ${env.AI_GRADE}
+Slowest Endpoint  : ${env.SLOWEST}
 
-AI Tool Used : Ollama (Local LLM)
+AI Tool Used : Ollama
 Model Used   : Phi3
 
 Reports Attached:
-
 1. JMeter HTML Dashboard
 2. AI Generated Performance PDF Report
-3. Raw JMeter Results
 
 Build URL:
 ${BUILD_URL}
-
-Environment:
-Ephemeral AKS Performance Test Environment
 
 Regards,
 Jenkins CI Pipeline
