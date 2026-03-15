@@ -161,14 +161,18 @@ stage('Install JMeter (if not exists)') {
 ```
 
 if (!(Test-Path "C:\JMeter\apache-jmeter-5.6.3")) {
+
 Write-Host "Installing Apache JMeter..."
 
 Invoke-WebRequest `    -Uri https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip`
 -OutFile jmeter.zip
 
 Expand-Archive jmeter.zip C:\JMeter -Force
+
 } else {
+
 Write-Host "JMeter already installed"
+
 }
 '''
 }
