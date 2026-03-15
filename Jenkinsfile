@@ -88,14 +88,15 @@ stage('Deploy NGINX & MySQL') {
     '''
   }
 }
-```
 
 stage('Wait for NGINX LoadBalancer IP') {
-steps {
-script {
-def ip = powershell(
-returnStdout: true,
-script: '''
+  steps {
+    script {
+      def ip = powershell(
+        returnStdout: true,
+        script: '''
+```
+
 $ip = ""
 for ($i = 0; $i -lt 40; $i++) {
 try {
@@ -115,17 +116,17 @@ throw "Failed to get NGINX LoadBalancer IP"
 ).trim()
 
 ```
-  env.APP_IP = ip
-  echo "Application URL: http://${env.APP_IP}"
-}
-```
-
-}
+      env.APP_IP = ip
+      echo "Application URL: http://${env.APP_IP}"
+    }
+  }
 }
 
 stage('Install Java (if not exists)') {
-steps {
-powershell '''
+  steps {
+    powershell '''
+```
+
 $javaHome = "C:\Java\jdk-11"
 
 if (!(Test-Path $javaHome)) {
@@ -161,8 +162,10 @@ stage('Install JMeter (if not exists)') {
 
 if (!(Test-Path "C:\JMeter\apache-jmeter-5.6.3")) {
 Write-Host "Installing Apache JMeter..."
+
 Invoke-WebRequest `    -Uri https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip`
 -OutFile jmeter.zip
+
 Expand-Archive jmeter.zip C:\JMeter -Force
 } else {
 Write-Host "JMeter already installed"
@@ -180,64 +183,55 @@ stage('Verify Java & JMeter') {
     '''
   }
 }
-```
 
 stage('Wait for NGINX Deployment') {
-steps {
-bat '''
-kubectl rollout status deployment/nginx --timeout=300s
-kubectl get pods -l app=nginx
-kubectl get endpoints nginx
-'''
-}
+  steps {
+    bat '''
+    kubectl rollout status deployment/nginx --timeout=300s
+    kubectl get pods -l app=nginx
+    kubectl get endpoints nginx
+    '''
+  }
 }
 
 stage('Validate Application Endpoints') {
-steps {
-bat """
-echo Validating Home Page
-curl -f http://${APP_IP}/index.html || exit 1
+  steps {
+    bat """
+    echo Validating Home Page
+    curl -f http://${APP_IP}/index.html || exit 1
 
-```
-echo Validating About Page
-curl -f http://${APP_IP}/about.html || exit 1
+    echo Validating About Page
+    curl -f http://${APP_IP}/about.html || exit 1
 
-echo Validating Contact Page
-curl -f http://${APP_IP}/contact.html || exit 1
-"""
-```
-
-}
+    echo Validating Contact Page
+    curl -f http://${APP_IP}/contact.html || exit 1
+    """
+  }
 }
 
 stage('Run JMeter Test (Native)') {
-steps {
-bat '''
-if exist jmeter-report rmdir /s /q jmeter-report
-mkdir jmeter-report
+  steps {
+    bat '''
+    if exist jmeter-report rmdir /s /q jmeter-report
+    mkdir jmeter-report
 
-```
-jmeter ^
-  -n ^
-  -t jmeter\\web_perf_test.jmx ^
-  -JHOST=%APP_IP% ^
-  -JPORT=80 ^
-  -Jjtl=jmeter-report\\results.jtl ^
-  -l jmeter-report\\results.jtl ^
-  -e -o jmeter-report\\html
-'''
-```
-
+    jmeter ^
+      -n ^
+      -t jmeter\\web_perf_test.jmx ^
+      -JHOST=%APP_IP% ^
+      -JPORT=80 ^
+      -Jjtl=jmeter-report\\results.jtl ^
+      -l jmeter-report\\results.jtl ^
+      -e -o jmeter-report\\html
+    '''
+  }
 }
-}
-
-/* ============================
-NEW STAGES (AI INTEGRATION)
-============================ */
 
 stage('Extract Performance Metrics') {
-steps {
-powershell '''
+  steps {
+    powershell '''
+```
+
 $stats = Get-ChildItem -Recurse jmeter-report\html | Where-Object { $_.Name -eq "statistics.json" }
 
 $data = Get-Content $stats.FullName | ConvertFrom-Json
@@ -256,40 +250,32 @@ echo "AVG_RESPONSE=$avg" >> metrics.txt
 }
 }
 
+```
 stage('Validate Python & Ollama') {
-steps {
-bat '''
-echo Verifying Python installation
-python --version
+  steps {
+    bat '''
+    echo Verifying Python installation
+    python --version
 
-```
-echo Verifying Ollama installation
-ollama --version
+    echo Verifying Ollama installation
+    ollama --version
 
-echo Checking installed models
-ollama list
-'''
-```
-
-}
+    echo Checking installed models
+    ollama list
+    '''
+  }
 }
 
 stage('Run GenAI Analysis (Ollama)') {
-steps {
-bat '''
-echo Running GenAI performance analysis...
+  steps {
+    bat '''
+    echo Running GenAI performance analysis...
 
-```
-python genai\\genai_jmeter_pdf_report.py jmeter-report\\html
-'''
-```
-
-}
+    python genai\\genai_jmeter_pdf_report.py jmeter-report\\html
+    '''
+  }
 }
 
-/* ============================ */
-
-```
 stage('Zip JMeter Report') {
   steps {
     bat '''
@@ -335,9 +321,8 @@ Avg Response     : ${AVG} ms
 
 AI Tool Used : Ollama (Local LLM)
 Model Used   : Phi3
-Purpose      : Automated performance insights and optimization recommendations.
 
-## Reports Attached
+Reports Attached:
 
 1. JMeter HTML Dashboard
 2. AI Generated Performance PDF Report
@@ -358,6 +343,7 @@ attachmentsPattern: "jmeter-report.zip"
 }
 }
 }
+
 }
 
 post {
