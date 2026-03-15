@@ -274,7 +274,6 @@ stage('Run GenAI Analysis (Ollama)') {
   steps {
     bat '''
     echo Running GenAI performance analysis...
-
     python genai\\genai_jmeter_pdf_report.py jmeter-report\\html
     '''
   }
