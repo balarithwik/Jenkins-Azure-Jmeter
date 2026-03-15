@@ -10,15 +10,14 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "phi3"
 
 def extract_metrics(report_path):
-
-
 stats_file = None
+
 
 for root, dirs, files in os.walk(report_path):
     if "statistics.json" in files:
         stats_file = os.path.join(root, "statistics.json")
 
-if not stats_file:
+if stats_file is None:
     raise Exception("statistics.json not found")
 
 with open(stats_file) as f:
@@ -44,9 +43,8 @@ return metrics, endpoints
 
 
 def performance_score(metrics):
-
-
 score = 100
+
 
 if metrics["avg"] > 1000:
     score -= 30
@@ -65,17 +63,14 @@ return max(score, 0)
 
 
 def grade(score):
-
-
 if score >= 90:
-    return "A"
+return "A"
 elif score >= 75:
-    return "B"
+return "B"
 elif score >= 60:
-    return "C"
+return "C"
 else:
-    return "D"
-
+return "D"
 
 def slowest_endpoint(endpoints):
 return max(endpoints, key=endpoints.get)
@@ -122,11 +117,11 @@ plt.figure()
 plt.bar(labels, values)
 plt.title("Response Time Comparison")
 
-graph = os.path.join(report_path, "performance_graph.png")
+graph_path = os.path.join(report_path, "performance_graph.png")
 
-plt.savefig(graph)
+plt.savefig(graph_path)
 
-return graph
+return graph_path
 
 
 def generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, graph):
@@ -137,24 +132,24 @@ pdf_path = os.path.join(report_path, "AI_Performance_Report.pdf")
 styles = getSampleStyleSheet()
 story = []
 
-story.append(Paragraph("AI Performance Analysis Report", styles['Title']))
-story.append(Spacer(1,20))
+story.append(Paragraph("AI Performance Analysis Report", styles["Title"]))
+story.append(Spacer(1, 20))
 
-story.append(Paragraph(f"Performance Score : {score}/100", styles['Heading2']))
-story.append(Paragraph(f"Performance Grade : {grade_val}", styles['Heading2']))
-story.append(Spacer(1,20))
+story.append(Paragraph(f"Performance Score : {score}/100", styles["Heading2"]))
+story.append(Paragraph(f"Performance Grade : {grade_val}", styles["Heading2"]))
+story.append(Spacer(1, 20))
 
-story.append(Paragraph(f"Average Response Time : {metrics['avg']} ms", styles['Normal']))
-story.append(Paragraph(f"Throughput : {metrics['throughput']} req/sec", styles['Normal']))
-story.append(Paragraph(f"Error Rate : {metrics['error_pct']} %", styles['Normal']))
-story.append(Paragraph(f"Slowest Endpoint : {slowest}", styles['Normal']))
+story.append(Paragraph(f"Average Response Time : {metrics['avg']} ms", styles["Normal"]))
+story.append(Paragraph(f"Throughput : {metrics['throughput']} req/sec", styles["Normal"]))
+story.append(Paragraph(f"Error Rate : {metrics['error_pct']} %", styles["Normal"]))
+story.append(Paragraph(f"Slowest Endpoint : {slowest}", styles["Normal"]))
 
-story.append(Spacer(1,20))
+story.append(Spacer(1, 20))
 story.append(Image(graph, width=400, height=250))
 
-story.append(Spacer(1,20))
-story.append(Paragraph("AI Insights", styles['Heading2']))
-story.append(Paragraph(ai_text.replace("\n","<br/>"), styles['Normal']))
+story.append(Spacer(1, 20))
+story.append(Paragraph("AI Insights", styles["Heading2"]))
+story.append(Paragraph(ai_text.replace("\n", "<br/>"), styles["Normal"]))
 
 doc = SimpleDocTemplate(pdf_path)
 doc.build(story)
@@ -182,7 +177,6 @@ pdf = generate_pdf(report_path, metrics, score, grade_val, slowest, ai_text, gra
 
 print("AI Report Generated:", pdf)
 
-# Save summary for Jenkins email
 summary_file = os.path.join(report_path, "ai_summary.txt")
 
 with open(summary_file, "w") as f:
