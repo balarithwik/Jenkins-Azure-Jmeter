@@ -150,8 +150,8 @@
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
                 <stringProp name="Argument.value">{
-  &quot;customer_name&quot;: &quot;${customerName}&quot;,
-  &quot;customer_email&quot;: &quot;${customerEmail}&quot;,
+  &quot;customer_name&quot;: &quot;Bala_${__threadNum}_${__counter(FALSE)}_${__time(yyyyMMddHHmmssSSS,)}&quot;,
+  &quot;customer_email&quot;: &quot;bala_${__threadNum}_${__counter(FALSE)}_${__time(yyyyMMddHHmmssSSS,)}@test.com&quot;,
   &quot;items&quot;: [
     { &quot;product_id&quot;: 1, &quot;quantity&quot;: 1 },
     { &quot;product_id&quot;: 2, &quot;quantity&quot;: 2 }
