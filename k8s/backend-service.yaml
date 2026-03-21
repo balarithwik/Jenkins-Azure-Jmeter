@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: retail-backend
+spec:
+  selector:
+    app: retail-backend
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: LoadBalancer
