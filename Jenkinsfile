@@ -11,7 +11,8 @@ pipeline {
 
     JAVA_HOME   = "C:\\Java\\jdk-11"
     JMETER_HOME = "C:\\JMeter\\apache-jmeter-5.6.3"
-    PATH = "${JAVA_HOME}\\bin;${JMETER_HOME}\\bin;${env.PATH}"
+    MAVEN_HOME  = "C:\\Maven"
+    PATH = "${JAVA_HOME}\\bin;${JMETER_HOME}\\bin;${MAVEN_HOME}\\bin;${env.PATH}"
   }
 
   stages {
@@ -83,25 +84,10 @@ pipeline {
     stage('Read Terraform Outputs') {
       steps {
         script {
-          env.AKS_NAME = powershell(
-            returnStdout: true,
-            script: '(terraform output -raw aks_name).Trim()'
-          ).trim()
-
-          env.RESOURCE_GROUP = powershell(
-            returnStdout: true,
-            script: '(terraform output -raw resource_group).Trim()'
-          ).trim()
-
-          env.ACR_NAME = powershell(
-            returnStdout: true,
-            script: '(terraform output -raw acr_name).Trim()'
-          ).trim()
-
-          env.ACR_LOGIN_SERVER = powershell(
-            returnStdout: true,
-            script: '(terraform output -raw acr_login_server).Trim()'
-          ).trim()
+          env.AKS_NAME = powershell(returnStdout: true, script: '(terraform output -raw aks_name).Trim()').trim()
+          env.RESOURCE_GROUP = powershell(returnStdout: true, script: '(terraform output -raw resource_group).Trim()').trim()
+          env.ACR_NAME = powershell(returnStdout: true, script: '(terraform output -raw acr_name).Trim()').trim()
+          env.ACR_LOGIN_SERVER = powershell(returnStdout: true, script: '(terraform output -raw acr_login_server).Trim()').trim()
 
           echo "AKS Name        : ${env.AKS_NAME}"
           echo "Resource Group  : ${env.RESOURCE_GROUP}"
@@ -140,28 +126,36 @@ pipeline {
       }
     }
 
-   stage('Build & Push Backend Image to ACR') {
-  steps {
-    bat '''
-    echo Logging in to ACR...
-    call az acr login --name %ACR_NAME%
+    stage('Verify Maven') {
+      steps {
+        bat '''
+        mvn -v
+        '''
+      }
+    }
 
-    echo Building backend image...
-    docker build -t %ACR_LOGIN_SERVER%/retail-backend:latest backend
+    stage('Build & Push Backend Image to ACR') {
+      steps {
+        bat '''
+        echo Logging in to ACR...
+        call az acr login --name %ACR_NAME%
 
-    echo Pushing backend image...
-    docker push %ACR_LOGIN_SERVER%/retail-backend:latest
-    '''
-  }
-}
+        echo Building backend image...
+        docker build -t %ACR_LOGIN_SERVER%/retail-backend:latest backend
 
-stage('Verify Backend Image in ACR') {
-  steps {
-    bat '''
-    call az acr repository show-tags --name %ACR_NAME% --repository retail-backend
-    '''
-  }
-}
+        echo Pushing backend image...
+        docker push %ACR_LOGIN_SERVER%/retail-backend:latest
+        '''
+      }
+    }
+
+    stage('Verify Backend Image in ACR') {
+      steps {
+        bat '''
+        call az acr repository show-tags --name %ACR_NAME% --repository retail-backend
+        '''
+      }
+    }
 
     stage('Patch Backend Image in YAML') {
       steps {
@@ -232,27 +226,27 @@ throw "Failed to get Backend LoadBalancer IP"
     }
 
     stage('Build & Push Frontend Image to ACR') {
-  steps {
-    bat '''
-    echo Logging in to ACR...
-    call az acr login --name %ACR_NAME%
+      steps {
+        bat '''
+        echo Logging in to ACR...
+        call az acr login --name %ACR_NAME%
 
-    echo Building frontend image...
-    docker build -t %ACR_LOGIN_SERVER%/retail-frontend:latest frontend
+        echo Building frontend image...
+        docker build -t %ACR_LOGIN_SERVER%/retail-frontend:latest frontend
 
-    echo Pushing frontend image...
-    docker push %ACR_LOGIN_SERVER%/retail-frontend:latest
-    '''
-  }
-}
+        echo Pushing frontend image...
+        docker push %ACR_LOGIN_SERVER%/retail-frontend:latest
+        '''
+      }
+    }
 
-stage('Verify Frontend Image in ACR') {
-  steps {
-    bat '''
-    call az acr repository show-tags --name %ACR_NAME% --repository retail-frontend
-    '''
-  }
-}
+    stage('Verify Frontend Image in ACR') {
+      steps {
+        bat '''
+        call az acr repository show-tags --name %ACR_NAME% --repository retail-frontend
+        '''
+      }
+    }
 
     stage('Patch Frontend Image in YAML') {
       steps {
@@ -340,19 +334,12 @@ throw "Failed to get Frontend LoadBalancer IP"
 
         if (!(Test-Path $javaHome)) {
           Write-Host "Installing Java 11..."
-
           $zip = "java.zip"
           $url = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
-
           Invoke-WebRequest -Uri $url -OutFile $zip
           Expand-Archive $zip C:\\Java -Force
-
           $extracted = Get-ChildItem C:\\Java | Where-Object { $_.Name -like "jdk-11*" } | Select-Object -First 1
-
-          if ($null -eq $extracted) {
-            throw "JDK extraction failed"
-          }
-
+          if ($null -eq $extracted) { throw "JDK extraction failed" }
           Rename-Item $extracted.FullName $javaHome
           Write-Host "Java installed successfully"
         }
@@ -375,6 +362,97 @@ throw "Failed to get Frontend LoadBalancer IP"
           Write-Host "JMeter already installed"
         }
         '''
+      }
+    }
+
+    stage('Run Selenium Functional Tests') {
+      steps {
+        bat '''
+        cd selenium
+        mvn test -Dfrontend.url=http://%FRONTEND_IP%
+        '''
+      }
+    }
+
+    stage('Publish Selenium Results') {
+      steps {
+        junit testResults: 'selenium/target/surefire-reports/*.xml', allowEmptyResults: false
+      }
+    }
+
+    stage('Extract Functional Metrics') {
+      steps {
+        powershell '''
+        [xml]$xml = Get-Content "selenium\\target\\surefire-reports\\TEST-tests.RetailOrderTest.xml"
+
+        $tests = [int]$xml.testsuite.tests
+        $failures = [int]$xml.testsuite.failures
+        $errors = [int]$xml.testsuite.errors
+        $skipped = [int]$xml.testsuite.skipped
+        $passed = $tests - $failures - $errors - $skipped
+        $time = $xml.testsuite.time
+
+        $failedNames = @()
+        foreach ($tc in $xml.testsuite.testcase) {
+          if ($tc.failure -or $tc.error) {
+            $failedNames += $tc.name
+          }
+        }
+
+        $failedText = if ($failedNames.Count -gt 0) { $failedNames -join ", " } else { "None" }
+
+        $metrics = @"
+TOTAL_TESTS=$tests
+PASSED=$passed
+FAILED=$failures
+ERRORS=$errors
+SKIPPED=$skipped
+DURATION=$time
+FAILED_TEST_NAMES=$failedText
+"@
+
+        $metrics | Out-File -FilePath functional_metrics.txt -Encoding ascii
+        Get-Content functional_metrics.txt
+        '''
+      }
+    }
+
+    stage('Validate Python & Ollama') {
+      steps {
+        bat '''
+        echo Verifying Python installation
+        python --version
+
+        echo Verifying Ollama installation
+        ollama --version
+
+        echo Checking installed models
+        ollama list
+        '''
+      }
+    }
+
+    stage('Run GenAI Functional Analysis (Ollama)') {
+      steps {
+        bat '''
+        python genai\\genai_selenium_analysis.py functional_metrics.txt
+        '''
+      }
+    }
+
+    stage('Read Functional AI Results') {
+      steps {
+        script {
+          def fai = readFile(file: 'functional_ai_summary.txt').trim().split("\\r?\\n")
+
+          env.FUNC_SCORE = fai.find { it.startsWith("SCORE") }?.split("=", 2)[1]
+          env.FUNC_GRADE = fai.find { it.startsWith("GRADE") }?.split("=", 2)[1]
+          env.FUNC_ISSUE = fai.find { it.startsWith("TOP_ISSUE") }?.split("=", 2)[1]
+
+          echo "Functional AI Score: ${env.FUNC_SCORE}"
+          echo "Functional AI Grade: ${env.FUNC_GRADE}"
+          echo "Functional Top Issue: ${env.FUNC_ISSUE}"
+        }
       }
     }
 
@@ -456,38 +534,22 @@ $metrics | Out-File -FilePath metrics.txt -Encoding ascii
       }
     }
 
-    stage('Validate Python & Ollama') {
+    stage('Run GenAI Performance Analysis (Ollama)') {
       steps {
         bat '''
-        echo Verifying Python installation
-        python --version
-
-        echo Verifying Ollama installation
-        ollama --version
-
-        echo Checking installed models
-        ollama list
-        '''
-      }
-    }
-
-    stage('Run GenAI Analysis (Ollama)') {
-      steps {
-        bat '''
-        echo Running GenAI performance analysis...
         python genai\\genai_jmeter_pdf_report.py jmeter-report\\html
         '''
       }
     }
 
-    stage('Read AI Analysis Results') {
+    stage('Read Performance AI Results') {
       steps {
         script {
           def ai = readFile(file: 'jmeter-report/html/ai_summary.txt').trim().split("\\r?\\n")
 
-          env.AI_SCORE = ai.find { it.startsWith("SCORE") }?.split("=")[1]
-          env.AI_GRADE = ai.find { it.startsWith("GRADE") }?.split("=")[1]
-          env.SLOWEST  = ai.find { it.startsWith("SLOWEST") }?.split("=")[1]
+          env.AI_SCORE = ai.find { it.startsWith("SCORE") }?.split("=", 2)[1]
+          env.AI_GRADE = ai.find { it.startsWith("GRADE") }?.split("=", 2)[1]
+          env.SLOWEST  = ai.find { it.startsWith("SLOWEST") }?.split("=", 2)[1]
 
           echo "AI Score: ${env.AI_SCORE}"
           echo "AI Grade: ${env.AI_GRADE}"
@@ -508,23 +570,32 @@ $metrics | Out-File -FilePath metrics.txt -Encoding ascii
       }
     }
 
-    stage('Email JMeter Report') {
+    stage('Email Combined Report') {
       steps {
         script {
-          def metrics = readFile(file: 'metrics.txt').trim().split("\\r?\\n")
+          def perf = readFile(file: 'metrics.txt').trim().split("\\r?\\n")
+          def func = readFile(file: 'functional_metrics.txt').trim().split("\\r?\\n")
 
-          def USERS = metrics.find { it.startsWith("USERS") }?.split("=")[1]
-          def TPS = metrics.find { it.startsWith("TPS") }?.split("=")[1]
-          def ERROR = metrics.find { it.startsWith("ERROR_RATE") }?.split("=")[1]
-          def AVG = metrics.find { it.startsWith("AVG_RESPONSE") }?.split("=")[1]
+          def USERS = perf.find { it.startsWith("USERS") }?.split("=", 2)[1]
+          def TPS = perf.find { it.startsWith("TPS") }?.split("=", 2)[1]
+          def ERROR = perf.find { it.startsWith("ERROR_RATE") }?.split("=", 2)[1]
+          def AVG = perf.find { it.startsWith("AVG_RESPONSE") }?.split("=", 2)[1]
+
+          def TOTAL_TESTS = func.find { it.startsWith("TOTAL_TESTS") }?.split("=", 2)[1]
+          def PASSED = func.find { it.startsWith("PASSED") }?.split("=", 2)[1]
+          def FAILED = func.find { it.startsWith("FAILED") }?.split("=", 2)[1]
+          def ERRORS = func.find { it.startsWith("ERRORS") }?.split("=", 2)[1]
+          def SKIPPED = func.find { it.startsWith("SKIPPED") }?.split("=", 2)[1]
+          def DURATION = func.find { it.startsWith("DURATION") }?.split("=", 2)[1]
+          def FAILED_TEST_NAMES = func.find { it.startsWith("FAILED_TEST_NAMES") }?.split("=", 2)[1]
 
           emailext(
-            subject: "Retail App + GenAI Performance Report | Build #${BUILD_NUMBER}",
+            subject: "Retail App Functional + Performance Report | Build #${BUILD_NUMBER}",
             body: """
 
 Hi Team,
 
-Performance testing completed successfully.
+Ephemeral testing pipeline completed successfully.
 
 Frontend URL:
 http://${FRONTEND_IP}
@@ -535,26 +606,43 @@ http://${BACKEND_IP}:5000
 ACR Login Server:
 ${ACR_LOGIN_SERVER}
 
+Functional Test Summary
+---------------------------------
+Total Test Cases          : ${TOTAL_TESTS}
+Passed                    : ${PASSED}
+Failed                    : ${FAILED}
+Errors                    : ${ERRORS}
+Skipped                   : ${SKIPPED}
+Execution Time (sec)      : ${DURATION}
+Failed Test Names         : ${FAILED_TEST_NAMES}
+
+AI Functional Analysis
+---------------------------------
+Functional Score          : ${env.FUNC_SCORE}/100
+Functional Grade          : ${env.FUNC_GRADE}
+Top Functional Issue      : ${env.FUNC_ISSUE}
+
 Performance Test Summary
 ---------------------------------
-Concurrent Users           : ${USERS}
-Throughput (TPS)           : ${TPS}
-Error Rate                 : ${ERROR} %
-Avg Response               : ${AVG} ms
-Total Orders Created       : ${env.TOTAL_ORDERS}
+Concurrent Users          : ${USERS}
+Throughput (TPS)          : ${TPS}
+Error Rate                : ${ERROR} %
+Avg Response              : ${AVG} ms
+Total Orders Created      : ${env.TOTAL_ORDERS}
 
 AI Performance Analysis
 ---------------------------------
-Performance Score          : ${env.AI_SCORE}/100
-Performance Grade          : ${env.AI_GRADE}
-Slowest Endpoint           : ${env.SLOWEST}
+Performance Score         : ${env.AI_SCORE}/100
+Performance Grade         : ${env.AI_GRADE}
+Slowest Endpoint          : ${env.SLOWEST}
 
-AI Tool Used               : Ollama
-Model Used                 : Phi3
+AI Tool Used              : Ollama
+Model Used                : Phi3
 
 Reports Attached:
-1. JMeter HTML Dashboard
+1. JMeter HTML Dashboard ZIP
 2. AI Generated Performance PDF Report
+3. Selenium JUnit XML Report in Jenkins
 
 Build URL:
 ${BUILD_URL}
@@ -563,7 +651,7 @@ Regards,
 Jenkins CI Pipeline
 """,
             to: "rithwik10122000@gmail.com",
-            attachmentsPattern: "jmeter-report.zip"
+            attachmentsPattern: "jmeter-report.zip, jmeter-report/html/*.pdf, selenium/target/surefire-reports/*.xml"
           )
         }
       }
