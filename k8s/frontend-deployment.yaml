@@ -14,13 +14,11 @@ spec:
     spec:
       containers:
         - name: retail-frontend
-          image: balarithwik/retail-frontend:latest
+          image: placeholder.azurecr.io/retail-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:
-            - name: REACT_APP_API_BASE
-              value: http://retail-backend:5000
             - name: HOST
               value: 0.0.0.0
             - name: PORT

@@ -37,8 +37,8 @@ data:
 
     INSERT INTO products (name, category, price, stock_qty)
     VALUES
-      ('Laptop', 'Electronics', 65000.00, 100),
-      ('Mouse', 'Accessories', 800.00, 200),
-      ('Keyboard', 'Accessories', 1500.00, 150),
-      ('Headset', 'Accessories', 2200.00, 120),
-      ('Monitor', 'Electronics', 12000.00, 80);
+      ('Laptop', 'Electronics', 65000.00, 5000),
+      ('Mouse', 'Accessories', 800.00, 10000),
+      ('Keyboard', 'Accessories', 1500.00, 5000),
+      ('Headset', 'Accessories', 2200.00, 5000),
+      ('Monitor', 'Electronics', 12000.00, 3000);

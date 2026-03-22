@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: retail-backend
-          image: balarithwik/retail-backend:latest
+          image: placeholder.azurecr.io/retail-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
