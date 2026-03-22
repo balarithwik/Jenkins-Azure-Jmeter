@@ -12,8 +12,6 @@ pipeline {
     JAVA_HOME   = "C:\\Java\\jdk-11"
     JMETER_HOME = "C:\\JMeter\\apache-jmeter-5.6.3"
     PATH = "${JAVA_HOME}\\bin;${JMETER_HOME}\\bin;${env.PATH}"
-
-    DOCKERHUB_REPO = "balarithwik"
   }
 
   stages {
@@ -39,6 +37,7 @@ pipeline {
         az provider register --namespace Microsoft.Compute
         az provider register --namespace Microsoft.Network
         az provider register --namespace Microsoft.Storage
+        az provider register --namespace Microsoft.ContainerRegistry
 
         timeout /t 30
         '''
@@ -57,12 +56,43 @@ pipeline {
       }
     }
 
+    stage('Read Terraform Outputs') {
+      steps {
+        script {
+          env.AKS_NAME = powershell(
+            returnStdout: true,
+            script: '(terraform output -raw aks_name).Trim()'
+          ).trim()
+
+          env.RESOURCE_GROUP = powershell(
+            returnStdout: true,
+            script: '(terraform output -raw resource_group).Trim()'
+          ).trim()
+
+          env.ACR_NAME = powershell(
+            returnStdout: true,
+            script: '(terraform output -raw acr_name).Trim()'
+          ).trim()
+
+          env.ACR_LOGIN_SERVER = powershell(
+            returnStdout: true,
+            script: '(terraform output -raw acr_login_server).Trim()'
+          ).trim()
+
+          echo "AKS Name        : ${env.AKS_NAME}"
+          echo "Resource Group  : ${env.RESOURCE_GROUP}"
+          echo "ACR Name        : ${env.ACR_NAME}"
+          echo "ACR LoginServer : ${env.ACR_LOGIN_SERVER}"
+        }
+      }
+    }
+
     stage('Configure Kubernetes Access') {
       steps {
         bat '''
         az aks get-credentials ^
-          --resource-group demo-rg ^
-          --name demo-aks ^
+          --resource-group %RESOURCE_GROUP% ^
+          --name %AKS_NAME% ^
           --overwrite-existing
         '''
       }
@@ -77,15 +107,25 @@ pipeline {
       }
     }
 
-    stage('Build Backend Image') {
+    stage('Build Backend Image in ACR') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          bat '''
-          docker login -u %DOCKER_USER% -p %DOCKER_PASS%
-          docker build -t %DOCKER_USER%/retail-backend:latest backend
-          docker push %DOCKER_USER%/retail-backend:latest
-          '''
-        }
+        bat '''
+        az acr build ^
+          --registry %ACR_NAME% ^
+          --image retail-backend:latest ^
+          ./backend
+        '''
+      }
+    }
+
+    stage('Patch Backend Image in YAML') {
+      steps {
+        powershell '''
+        $filePath = "k8s\\backend-deployment.yaml"
+        $content = Get-Content $filePath -Raw
+        $updated = $content -replace 'image:\\s*.*retail-backend:latest', 'image: ' + $env:ACR_LOGIN_SERVER + '/retail-backend:latest'
+        Set-Content -Path $filePath -Value $updated
+        '''
       }
     }
 
@@ -143,15 +183,25 @@ throw "Failed to get Backend LoadBalancer IP"
       }
     }
 
-    stage('Build Frontend Image') {
+    stage('Build Frontend Image in ACR') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          bat '''
-          docker login -u %DOCKER_USER% -p %DOCKER_PASS%
-          docker build -t %DOCKER_USER%/retail-frontend:latest frontend
-          docker push %DOCKER_USER%/retail-frontend:latest
-          '''
-        }
+        bat '''
+        az acr build ^
+          --registry %ACR_NAME% ^
+          --image retail-frontend:latest ^
+          ./frontend
+        '''
+      }
+    }
+
+    stage('Patch Frontend Image in YAML') {
+      steps {
+        powershell '''
+        $filePath = "k8s\\frontend-deployment.yaml"
+        $content = Get-Content $filePath -Raw
+        $updated = $content -replace 'image:\\s*.*retail-frontend:latest', 'image: ' + $env:ACR_LOGIN_SERVER + '/retail-frontend:latest'
+        Set-Content -Path $filePath -Value $updated
+        '''
       }
     }
 
@@ -295,28 +345,28 @@ else {
       }
     }
 
- stage('Validate Orders in Database') {
-  steps {
-    script {
-      powershell '''
+    stage('Validate Orders in Database') {
+      steps {
+        script {
+          powershell '''
 $mysqlPod = kubectl get pods -l app=mysql -o jsonpath="{.items[0].metadata.name}"
 Write-Host "Latest order summary:"
 kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT id, order_number, customer_name, total_amount, status, created_at FROM orders ORDER BY id DESC LIMIT 10;"
 '''
 
-      def totalOrders = powershell(
-        returnStdout: true,
-        script: '''
+          def totalOrders = powershell(
+            returnStdout: true,
+            script: '''
 $mysqlPod = kubectl get pods -l app=mysql -o jsonpath="{.items[0].metadata.name}"
 kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT COUNT(*) FROM orders;"
 '''
-      ).trim()
+          ).trim()
 
-      env.TOTAL_ORDERS = totalOrders
-      echo "Total Orders Created: ${env.TOTAL_ORDERS}"
+          env.TOTAL_ORDERS = totalOrders
+          echo "Total Orders Created: ${env.TOTAL_ORDERS}"
+        }
+      }
     }
-  }
-}
 
     stage('Extract Performance Metrics') {
       steps {
@@ -418,6 +468,9 @@ http://${FRONTEND_IP}
 
 Backend URL:
 http://${BACKEND_IP}:5000
+
+ACR Login Server:
+${ACR_LOGIN_SERVER}
 
 Performance Test Summary
 ---------------------------------

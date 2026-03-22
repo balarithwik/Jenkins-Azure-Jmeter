@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.100"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -14,8 +18,6 @@ terraform {
 # -----------------------------
 provider "azurerm" {
   features {}
-
-  # Provider registration handled via Azure CLI in Jenkins
   skip_provider_registration = true
 }
 
@@ -27,11 +29,36 @@ variable "location" {
 }
 
 # -----------------------------
+# Random suffix for ACR name
+# -----------------------------
+resource "random_string" "acr_suffix" {
+  length  = 6
+  upper   = false
+  special = false
+  numeric = true
+}
+
+# -----------------------------
 # Resource Group
 # -----------------------------
 resource "azurerm_resource_group" "rg" {
   name     = "demo-rg"
   location = var.location
+}
+
+# -----------------------------
+# Azure Container Registry
+# -----------------------------
+resource "azurerm_container_registry" "acr" {
+  name                = "demoacr${random_string.acr_suffix.result}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  sku                 = "Basic"
+  admin_enabled       = true
+
+  tags = {
+    environment = "demo"
+  }
 }
 
 # -----------------------------
@@ -46,7 +73,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   default_node_pool {
     name       = "system"
     node_count = 2
-    vm_size    = "Standard_B2s_v2"   # ✅ ALLOWED SKU
+    vm_size    = "Standard_B2s_v2"
   }
 
   identity {
@@ -67,6 +94,16 @@ resource "azurerm_kubernetes_cluster" "aks" {
 }
 
 # -----------------------------
+# Grant AKS pull access to ACR
+# -----------------------------
+resource "azurerm_role_assignment" "aks_acr_pull" {
+  principal_id                     = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+  role_definition_name             = "AcrPull"
+  scope                            = azurerm_container_registry.acr.id
+  skip_service_principal_aad_check = true
+}
+
+# -----------------------------
 # Outputs
 # -----------------------------
 output "aks_name" {
@@ -75,4 +112,22 @@ output "aks_name" {
 
 output "resource_group" {
   value = azurerm_resource_group.rg.name
+}
+
+output "acr_name" {
+  value = azurerm_container_registry.acr.name
+}
+
+output "acr_login_server" {
+  value = azurerm_container_registry.acr.login_server
+}
+
+output "acr_admin_username" {
+  value = azurerm_container_registry.acr.admin_username
+  sensitive = true
+}
+
+output "acr_admin_password" {
+  value = azurerm_container_registry.acr.admin_password
+  sensitive = true
 }
