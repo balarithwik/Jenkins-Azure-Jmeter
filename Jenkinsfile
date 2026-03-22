@@ -24,25 +24,32 @@ pipeline {
     }
 
     stage('Azure Login & Provider Registration') {
-      steps {
-        bat '''
-        az login --service-principal ^
-          -u %ARM_CLIENT_ID% ^
-          -p %ARM_CLIENT_SECRET% ^
-          --tenant %ARM_TENANT_ID%
+  steps {
+    bat '''
+    az login --service-principal ^
+      -u %ARM_CLIENT_ID% ^
+      -p %ARM_CLIENT_SECRET% ^
+      --tenant %ARM_TENANT_ID%
 
-        az account set --subscription %ARM_SUBSCRIPTION_ID%
+    az account set --subscription %ARM_SUBSCRIPTION_ID%
 
-        az provider register --namespace Microsoft.ContainerService
-        az provider register --namespace Microsoft.Compute
-        az provider register --namespace Microsoft.Network
-        az provider register --namespace Microsoft.Storage
-        az provider register --namespace Microsoft.ContainerRegistry
+    az provider register --namespace Microsoft.ContainerService
+    az provider register --namespace Microsoft.Compute
+    az provider register --namespace Microsoft.Network
+    az provider register --namespace Microsoft.Storage
+    az provider register --namespace Microsoft.ContainerRegistry
 
-        timeout /t 30
-        '''
-      }
-    }
+    echo Checking provider registration states...
+    az provider show --namespace Microsoft.ContainerService --query "registrationState" -o tsv
+    az provider show --namespace Microsoft.Compute --query "registrationState" -o tsv
+    az provider show --namespace Microsoft.Network --query "registrationState" -o tsv
+    az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
+    az provider show --namespace Microsoft.ContainerRegistry --query "registrationState" -o tsv
+
+    timeout /t 60
+    '''
+  }
+}
 
     stage('Terraform Init') {
       steps {
