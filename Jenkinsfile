@@ -295,29 +295,28 @@ else {
       }
     }
 
-    stage('Validate Orders in Database') {
-      steps {
-        script {
-          def totalOrders = powershell(
-            returnStdout: true,
-            script: '''
+ stage('Validate Orders in Database') {
+  steps {
+    script {
+      powershell '''
 $mysqlPod = kubectl get pods -l app=mysql -o jsonpath="{.items[0].metadata.name}"
-
 Write-Host "Latest order summary:"
 kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT id, order_number, customer_name, total_amount, status, created_at FROM orders ORDER BY id DESC LIMIT 10;"
-
-$totalOrders = kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT COUNT(*) FROM orders;"
-Write-Output $totalOrders
 '''
-          ).trim()
 
-          env.TOTAL_ORDERS = totalOrders
-          writeFile file: 'db_metrics.txt', text: "TOTAL_ORDERS=${env.TOTAL_ORDERS}\n"
+      def totalOrders = powershell(
+        returnStdout: true,
+        script: '''
+$mysqlPod = kubectl get pods -l app=mysql -o jsonpath="{.items[0].metadata.name}"
+kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT COUNT(*) FROM orders;"
+'''
+      ).trim()
 
-          echo "Total Orders Created: ${env.TOTAL_ORDERS}"
-        }
-      }
+      env.TOTAL_ORDERS = totalOrders
+      echo "Total Orders Created: ${env.TOTAL_ORDERS}"
     }
+  }
+}
 
     stage('Extract Performance Metrics') {
       steps {
