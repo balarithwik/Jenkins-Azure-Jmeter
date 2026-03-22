@@ -24,32 +24,49 @@ pipeline {
     }
 
     stage('Azure Login & Provider Registration') {
-  steps {
-    bat '''
-    az login --service-principal ^
-      -u %ARM_CLIENT_ID% ^
-      -p %ARM_CLIENT_SECRET% ^
-      --tenant %ARM_TENANT_ID%
+      steps {
+        bat '''
+        az login --service-principal ^
+          -u %ARM_CLIENT_ID% ^
+          -p %ARM_CLIENT_SECRET% ^
+          --tenant %ARM_TENANT_ID%
 
-    az account set --subscription %ARM_SUBSCRIPTION_ID%
+        az account set --subscription %ARM_SUBSCRIPTION_ID%
 
-    az provider register --namespace Microsoft.ContainerService
-    az provider register --namespace Microsoft.Compute
-    az provider register --namespace Microsoft.Network
-    az provider register --namespace Microsoft.Storage
-    az provider register --namespace Microsoft.ContainerRegistry
+        az provider register --namespace Microsoft.ContainerService
+        az provider register --namespace Microsoft.Compute
+        az provider register --namespace Microsoft.Network
+        az provider register --namespace Microsoft.Storage
+        az provider register --namespace Microsoft.ContainerRegistry
 
-    echo Checking provider registration states...
-    az provider show --namespace Microsoft.ContainerService --query "registrationState" -o tsv
-    az provider show --namespace Microsoft.Compute --query "registrationState" -o tsv
-    az provider show --namespace Microsoft.Network --query "registrationState" -o tsv
-    az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
-    az provider show --namespace Microsoft.ContainerRegistry --query "registrationState" -o tsv
+        echo Checking provider registration states...
+        az provider show --namespace Microsoft.ContainerService --query "registrationState" -o tsv
+        az provider show --namespace Microsoft.Compute --query "registrationState" -o tsv
+        az provider show --namespace Microsoft.Network --query "registrationState" -o tsv
+        az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
+        az provider show --namespace Microsoft.ContainerRegistry --query "registrationState" -o tsv
 
-    timeout /t 60
-    '''
-  }
-}
+        timeout /t 60
+        '''
+      }
+    }
+
+    stage('Wait for ContainerRegistry Provider Registration') {
+      steps {
+        powershell '''
+        $state = ""
+        for ($i = 0; $i -lt 20; $i++) {
+          $state = az provider show --namespace Microsoft.ContainerRegistry --query "registrationState" -o tsv
+          Write-Host "Microsoft.ContainerRegistry state: $state"
+          if ($state -eq "Registered") {
+            exit 0
+          }
+          Start-Sleep -Seconds 15
+        }
+        throw "Microsoft.ContainerRegistry provider is not Registered"
+        '''
+      }
+    }
 
     stage('Terraform Init') {
       steps {
@@ -114,24 +131,34 @@ pipeline {
       }
     }
 
-    stage('Build & Push Backend Image to ACR') {
-  steps {
-    bat '''
-    az acr login --name %ACR_NAME%
+    stage('Verify Docker') {
+      steps {
+        bat '''
+        docker --version
+        docker ps
+        '''
+      }
+    }
 
-    docker build -t %ACR_LOGIN_SERVER%/retail-backend:latest backend
-    docker push %ACR_LOGIN_SERVER%/retail-backend:latest
-    '''
-  }
-}
+    stage('Build & Push Backend Image to ACR') {
+      steps {
+        bat '''
+        az acr login --name %ACR_NAME%
+        docker build -t %ACR_LOGIN_SERVER%/retail-backend:latest backend
+        docker push %ACR_LOGIN_SERVER%/retail-backend:latest
+        '''
+      }
+    }
 
     stage('Patch Backend Image in YAML') {
       steps {
         powershell '''
         $filePath = "k8s\\backend-deployment.yaml"
         $content = Get-Content $filePath -Raw
-        $updated = $content -replace 'image:\\s*.*retail-backend:latest', 'image: ' + $env:ACR_LOGIN_SERVER + '/retail-backend:latest'
+        $replacement = "image: $env:ACR_LOGIN_SERVER/retail-backend:latest"
+        $updated = $content -replace 'image:\\s*.*retail-backend:latest', $replacement
         Set-Content -Path $filePath -Value $updated
+        Get-Content $filePath
         '''
       }
     }
@@ -186,28 +213,30 @@ throw "Failed to get Backend LoadBalancer IP"
         \$content = Get-Content \$filePath -Raw
         \$updated = \$content -replace 'const API_BASE = .*?;', 'const API_BASE = "http://${env.BACKEND_IP}:5000";'
         Set-Content -Path \$filePath -Value \$updated
+        Get-Content \$filePath
         """
       }
     }
 
-   stage('Build & Push Frontend Image to ACR') {
-  steps {
-    bat '''
-    az acr login --name %ACR_NAME%
-
-    docker build -t %ACR_LOGIN_SERVER%/retail-frontend:latest frontend
-    docker push %ACR_LOGIN_SERVER%/retail-frontend:latest
-    '''
-  }
-}
+    stage('Build & Push Frontend Image to ACR') {
+      steps {
+        bat '''
+        az acr login --name %ACR_NAME%
+        docker build -t %ACR_LOGIN_SERVER%/retail-frontend:latest frontend
+        docker push %ACR_LOGIN_SERVER%/retail-frontend:latest
+        '''
+      }
+    }
 
     stage('Patch Frontend Image in YAML') {
       steps {
         powershell '''
         $filePath = "k8s\\frontend-deployment.yaml"
         $content = Get-Content $filePath -Raw
-        $updated = $content -replace 'image:\\s*.*retail-frontend:latest', 'image: ' + $env:ACR_LOGIN_SERVER + '/retail-frontend:latest'
+        $replacement = "image: $env:ACR_LOGIN_SERVER/retail-frontend:latest"
+        $updated = $content -replace 'image:\\s*.*retail-frontend:latest', $replacement
         Set-Content -Path $filePath -Value $updated
+        Get-Content $filePath
         '''
       }
     }
@@ -281,45 +310,45 @@ throw "Failed to get Frontend LoadBalancer IP"
     stage('Install Java (if not exists)') {
       steps {
         powershell '''
-$javaHome = "C:\\Java\\jdk-11"
+        $javaHome = "C:\\Java\\jdk-11"
 
-if (!(Test-Path $javaHome)) {
-  Write-Host "Installing Java 11..."
+        if (!(Test-Path $javaHome)) {
+          Write-Host "Installing Java 11..."
 
-  $zip = "java.zip"
-  $url = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
+          $zip = "java.zip"
+          $url = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
 
-  Invoke-WebRequest -Uri $url -OutFile $zip
-  Expand-Archive $zip C:\\Java -Force
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive $zip C:\\Java -Force
 
-  $extracted = Get-ChildItem C:\\Java | Where-Object { $_.Name -like "jdk-11*" } | Select-Object -First 1
+          $extracted = Get-ChildItem C:\\Java | Where-Object { $_.Name -like "jdk-11*" } | Select-Object -First 1
 
-  if ($null -eq $extracted) {
-    throw "JDK extraction failed"
-  }
+          if ($null -eq $extracted) {
+            throw "JDK extraction failed"
+          }
 
-  Rename-Item $extracted.FullName $javaHome
-  Write-Host "Java installed successfully"
-}
-else {
-  Write-Host "Java already installed"
-}
-'''
+          Rename-Item $extracted.FullName $javaHome
+          Write-Host "Java installed successfully"
+        }
+        else {
+          Write-Host "Java already installed"
+        }
+        '''
       }
     }
 
     stage('Install JMeter (if not exists)') {
       steps {
         powershell '''
-if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
-  Write-Host "Installing Apache JMeter..."
-  Invoke-WebRequest -Uri https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip -OutFile jmeter.zip
-  Expand-Archive jmeter.zip C:\\JMeter -Force
-}
-else {
-  Write-Host "JMeter already installed"
-}
-'''
+        if (!(Test-Path "C:\\JMeter\\apache-jmeter-5.6.3")) {
+          Write-Host "Installing Apache JMeter..."
+          Invoke-WebRequest -Uri https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.zip -OutFile jmeter.zip
+          Expand-Archive jmeter.zip C:\\JMeter -Force
+        }
+        else {
+          Write-Host "JMeter already installed"
+        }
+        '''
       }
     }
 
@@ -365,7 +394,8 @@ kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb 
             returnStdout: true,
             script: '''
 $mysqlPod = kubectl get pods -l app=mysql -o jsonpath="{.items[0].metadata.name}"
-kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT COUNT(*) FROM orders;"
+$cnt = kubectl exec $mysqlPod -- mysql -N -B -uretailuser -pRetailPass@123 -D retaildb -e "SELECT COUNT(*) FROM orders;"
+Write-Output ($cnt | Select-Object -Last 1)
 '''
           ).trim()
 
