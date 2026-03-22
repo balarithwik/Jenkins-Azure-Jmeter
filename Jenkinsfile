@@ -658,6 +658,7 @@ Jenkins CI Pipeline
     }
   }
 }
+}
 
   post {
     always {
