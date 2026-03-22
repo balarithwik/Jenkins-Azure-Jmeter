@@ -114,16 +114,16 @@ pipeline {
       }
     }
 
-    stage('Build Backend Image in ACR') {
-      steps {
-        bat '''
-        az acr build ^
-          --registry %ACR_NAME% ^
-          --image retail-backend:latest ^
-          ./backend
-        '''
-      }
-    }
+    stage('Build & Push Backend Image to ACR') {
+  steps {
+    bat '''
+    az acr login --name %ACR_NAME%
+
+    docker build -t %ACR_LOGIN_SERVER%/retail-backend:latest backend
+    docker push %ACR_LOGIN_SERVER%/retail-backend:latest
+    '''
+  }
+}
 
     stage('Patch Backend Image in YAML') {
       steps {
@@ -190,16 +190,16 @@ throw "Failed to get Backend LoadBalancer IP"
       }
     }
 
-    stage('Build Frontend Image in ACR') {
-      steps {
-        bat '''
-        az acr build ^
-          --registry %ACR_NAME% ^
-          --image retail-frontend:latest ^
-          ./frontend
-        '''
-      }
-    }
+   stage('Build & Push Frontend Image to ACR') {
+  steps {
+    bat '''
+    az acr login --name %ACR_NAME%
+
+    docker build -t %ACR_LOGIN_SERVER%/retail-frontend:latest frontend
+    docker push %ACR_LOGIN_SERVER%/retail-frontend:latest
+    '''
+  }
+}
 
     stage('Patch Frontend Image in YAML') {
       steps {
