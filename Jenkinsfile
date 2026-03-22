@@ -571,27 +571,27 @@ $metrics | Out-File -FilePath metrics.txt -Encoding ascii
     }
 
     stage('Email Combined Report') {
-      steps {
-        script {
-          def perf = readFile(file: 'metrics.txt').trim().split("\\r?\\n")
-          def func = readFile(file: 'functional_metrics.txt').trim().split("\\r?\\n")
+  steps {
+    script {
+      def perf = readFile(file: 'metrics.txt').trim().split("\\r?\\n")
+      def func = readFile(file: 'functional_metrics.txt').trim().split("\\r?\\n")
 
-          def USERS = perf.find { it.startsWith("USERS") }?.split("=", 2)[1]
-          def TPS = perf.find { it.startsWith("TPS") }?.split("=", 2)[1]
-          def ERROR = perf.find { it.startsWith("ERROR_RATE") }?.split("=", 2)[1]
-          def AVG = perf.find { it.startsWith("AVG_RESPONSE") }?.split("=", 2)[1]
+      def USERS = perf.find { it.startsWith("USERS") }?.split("=", 2)[1]
+      def TPS = perf.find { it.startsWith("TPS") }?.split("=", 2)[1]
+      def ERROR = perf.find { it.startsWith("ERROR_RATE") }?.split("=", 2)[1]
+      def AVG = perf.find { it.startsWith("AVG_RESPONSE") }?.split("=", 2)[1]
 
-          def TOTAL_TESTS = func.find { it.startsWith("TOTAL_TESTS") }?.split("=", 2)[1]
-          def PASSED = func.find { it.startsWith("PASSED") }?.split("=", 2)[1]
-          def FAILED = func.find { it.startsWith("FAILED") }?.split("=", 2)[1]
-          def ERRORS = func.find { it.startsWith("ERRORS") }?.split("=", 2)[1]
-          def SKIPPED = func.find { it.startsWith("SKIPPED") }?.split("=", 2)[1]
-          def DURATION = func.find { it.startsWith("DURATION") }?.split("=", 2)[1]
-          def FAILED_TEST_NAMES = func.find { it.startsWith("FAILED_TEST_NAMES") }?.split("=", 2)[1]
+      def TOTAL_TESTS = func.find { it.startsWith("TOTAL_TESTS") }?.split("=", 2)[1]
+      def PASSED = func.find { it.startsWith("PASSED") }?.split("=", 2)[1]
+      def FAILED = func.find { it.startsWith("FAILED") }?.split("=", 2)[1]
+      def ERRORS = func.find { it.startsWith("ERRORS") }?.split("=", 2)[1]
+      def SKIPPED = func.find { it.startsWith("SKIPPED") }?.split("=", 2)[1]
+      def DURATION = func.find { it.startsWith("DURATION") }?.split("=", 2)[1]
+      def FAILED_TEST_NAMES = func.find { it.startsWith("FAILED_TEST_NAMES") }?.split("=", 2)[1]
 
-          emailext(
-            subject: "Retail App Functional + Performance Report | Build #${BUILD_NUMBER}",
-            body: """
+      emailext(
+        subject: "Retail App Functional + Performance Report | Build #${BUILD_NUMBER}",
+        body: """
 
 Hi Team,
 
@@ -640,9 +640,11 @@ AI Tool Used              : Ollama
 Model Used                : Phi3
 
 Reports Attached:
-1. JMeter HTML Dashboard ZIP
-2. AI Generated Performance PDF Report
-3. Selenium JUnit XML Report in Jenkins
+1. Functional AI Summary TXT
+2. Functional AI PDF Report
+3. Selenium JUnit XML Report
+4. JMeter HTML Dashboard ZIP
+5. AI Performance PDF Report
 
 Build URL:
 ${BUILD_URL}
@@ -650,13 +652,12 @@ ${BUILD_URL}
 Regards,
 Jenkins CI Pipeline
 """,
-            to: "rithwik10122000@gmail.com",
-            attachmentsPattern: "jmeter-report.zip, jmeter-report/html/*.pdf, selenium/target/surefire-reports/*.xml"
-          )
-        }
-      }
+        to: "rithwik10122000@gmail.com",
+        attachmentsPattern: "functional_ai_summary.txt, Functional_AI_Report.pdf, selenium/target/surefire-reports/*.xml, jmeter-report.zip, jmeter-report/html/AI_Performance_Report.pdf"
+      )
     }
   }
+}
 
   post {
     always {
