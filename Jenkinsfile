@@ -213,7 +213,7 @@ throw "Failed to get Backend LoadBalancer IP"
       }
     }
 
-    stage('Patch Frontend API URL') {
+  stage('Patch Frontend API URL') {
   steps {
     powershell """
     \$filePath = "frontend\\src\\App.js"
