@@ -214,16 +214,16 @@ throw "Failed to get Backend LoadBalancer IP"
     }
 
     stage('Patch Frontend API URL') {
-      steps {
-        powershell """
-        \$filePath = "frontend\\src\\App.js"
-        \$content = Get-Content \$filePath -Raw
-        \$updated = \$content -replace 'const API_BASE = .*?;', 'const API_BASE = "http://${env.BACKEND_IP}:5000";'
-        Set-Content -Path \$filePath -Value \$updated
-        Get-Content \$filePath
-        """
-      }
-    }
+  steps {
+    powershell """
+    \$filePath = "frontend\\src\\App.js"
+    \$content = Get-Content \$filePath -Raw
+    \$updated = \$content.Replace('__BACKEND_API_URL__', 'http://${env.BACKEND_IP}:5000')
+    Set-Content -Path \$filePath -Value \$updated
+    Get-Content \$filePath
+    """
+  }
+}
 
     stage('Build & Push Frontend Image to ACR') {
       steps {

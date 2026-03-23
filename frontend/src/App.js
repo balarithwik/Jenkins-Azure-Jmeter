@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-const API_BASE = "http://retail-backend:5000";
+const API_BASE = "__BACKEND_API_URL__";
 
 function App() {
   const [products, setProducts] = useState([]);
