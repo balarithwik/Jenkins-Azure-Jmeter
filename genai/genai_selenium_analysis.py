@@ -1,6 +1,8 @@
 import sys
 import subprocess
-from pathlib import Path
+import re
+import textwrap
+import os
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -16,16 +18,50 @@ def read_metrics(path: str) -> dict:
     return data
 
 
+def clean_ai_text(text: str) -> str:
+    if not text:
+        return "No response returned by Ollama."
+
+    # Remove ANSI escape sequences like \x1b[7D\x1b[K
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    text = ansi_escape.sub("", text)
+
+    # Remove any remaining strange control characters except newline/tab
+    text = re.sub(r"[\x00-\x08\x0B-\x1F\x7F]", "", text)
+
+    # Remove markdown bold markers
+    text = text.replace("**", "")
+
+    # Normalize spaces
+    text = text.replace("\r", "")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+
+    return text.strip()
+
+
 def call_ollama(prompt: str) -> str:
     try:
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["NO_COLOR"] = "1"
+        env["TERM"] = "dumb"
+
         result = subprocess.run(
             ["ollama", "run", "phi3", prompt],
             capture_output=True,
             text=True,
-            timeout=180
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+            env=env
         )
-        output = result.stdout.strip() if result.stdout.strip() else result.stderr.strip()
-        return output if output else "No response returned by Ollama."
+
+        raw_output = result.stdout.strip() if result.stdout.strip() else result.stderr.strip()
+        cleaned_output = clean_ai_text(raw_output)
+
+        return cleaned_output if cleaned_output else "No response returned by Ollama."
+
     except Exception as e:
         return f"Ollama execution failed: {e}"
 
@@ -39,6 +75,7 @@ def derive_summary(metrics: dict):
     failed_names = metrics.get("FAILED_TEST_NAMES", "None")
 
     effective_failures = failed + errors
+
     if total <= 0:
         score = 0
     else:
@@ -61,20 +98,21 @@ def generate_pdf(output_file: str, metrics: dict, score: str, grade: str, top_is
     c = canvas.Canvas(output_file, pagesize=A4)
     width, height = A4
     y = height - 50
+    left_margin = 50
+    max_width_chars = 95
 
-    def write_line(text, step=18):
+    def write_line(text="", step=18, font_name="Helvetica", font_size=11):
         nonlocal y
         if y < 50:
             c.showPage()
             y = height - 50
-        c.drawString(50, y, text[:110])
+        c.setFont(font_name, font_size)
+        c.drawString(left_margin, y, text)
         y -= step
 
-    c.setFont("Helvetica-Bold", 16)
-    write_line("Functional AI Analysis Report", 24)
-
-    c.setFont("Helvetica", 11)
+    write_line("Functional AI Analysis Report", step=26, font_name="Helvetica-Bold", font_size=16)
     write_line("")
+
     write_line(f"Total Tests      : {metrics.get('TOTAL_TESTS', '0')}")
     write_line(f"Passed           : {metrics.get('PASSED', '0')}")
     write_line(f"Failed           : {metrics.get('FAILED', '0')}")
@@ -85,19 +123,18 @@ def generate_pdf(output_file: str, metrics: dict, score: str, grade: str, top_is
     write_line(f"Functional Grade : {grade}")
     write_line(f"Top Issue        : {top_issue}")
     write_line("")
-    write_line("AI Analysis:")
+    write_line("AI Analysis:", font_name="Helvetica-Bold")
     write_line("")
 
-    for line in ai_text.splitlines():
-        if not line.strip():
+    for paragraph in ai_text.split("\n"):
+        paragraph = paragraph.strip()
+        if not paragraph:
             write_line("")
-        else:
-            # simple wrapping
-            chunk = line
-            while len(chunk) > 105:
-                write_line(chunk[:105])
-                chunk = chunk[105:]
-            write_line(chunk)
+            continue
+
+        wrapped_lines = textwrap.wrap(paragraph, width=max_width_chars)
+        for wrapped_line in wrapped_lines:
+            write_line(wrapped_line)
 
     c.save()
 
@@ -121,6 +158,11 @@ Provide:
 2. Likely failure area
 3. Business impact
 4. Recommendation
+
+Return plain text only.
+Do not use markdown.
+Do not use bullets with special symbols.
+Do not include terminal formatting or ANSI characters.
 """
 
     ai_text = call_ollama(prompt)
